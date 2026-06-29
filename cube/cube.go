@@ -6,7 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"weilong/connection"
+	"cubie/connection"
 )
 
 type CubeType int

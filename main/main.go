@@ -6,9 +6,9 @@ import (
 	"os"
 	"strconv"
 	"time"
-	"weilong/connection"
-	"weilong/controller"
-	"weilong/cube"
+	"cubie/connection"
+	"cubie/controller"
+	"cubie/cube"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"

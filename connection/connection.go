@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"weilong/encrypter"
+	"cubie/encrypter"
 
 	"tinygo.org/x/bluetooth"
 )
