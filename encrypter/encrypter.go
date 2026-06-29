@@ -18,7 +18,10 @@ type CubeEncrypter struct {
 
 func NewCubeEncrypter(macAddress string, cubeType int) (*CubeEncrypter, error) {
 	if cubeType == 1 {
-		key, iv := getKeyAndIV(macAddress)
+		key, iv, err := getKeyAndIV(macAddress)
+		if err != nil {
+			return nil, err
+		}
 		block, err := aes.NewCipher(key)
 		if err != nil {
 			return nil, err
@@ -30,12 +33,18 @@ func NewCubeEncrypter(macAddress string, cubeType int) (*CubeEncrypter, error) {
 			cubeType: cubeType,
 		}, nil
 	}
-	return nil, errors.New("Unknown cube type")
+	return nil, errors.New("unknown cube type")
 }
 
-func getKeyAndIV(macAddress string) ([]byte, []byte) {
+func getKeyAndIV(macAddress string) ([]byte, []byte, error) {
 	macClean := strings.ReplaceAll(macAddress, ":", "")
-	macBytes, _ := hex.DecodeString(macClean)
+	macBytes, err := hex.DecodeString(macClean)
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid MAC address %q: %w", macAddress, err)
+	}
+	if len(macBytes) != 6 {
+		return nil, nil, fmt.Errorf("invalid MAC address %q: expected 6 bytes, got %d", macAddress, len(macBytes))
+	}
 
 	key := make([]byte, len(WEILONG_ROOT_KEY))
 	copy(key, WEILONG_ROOT_KEY)
@@ -47,7 +56,7 @@ func getKeyAndIV(macAddress string) ([]byte, []byte) {
 		key[i] = byte((int(key[i]) + int(macBytes[macIdx])) % 255)
 		iv[i] = byte((int(iv[i]) + int(macBytes[macIdx])) % 255)
 	}
-	return key, iv
+	return key, iv, nil
 }
 
 func (c *CubeEncrypter) Encrypt(data []byte) []byte {

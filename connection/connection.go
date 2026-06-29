@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"time"
+
 	"cubie/encrypter"
 
 	"tinygo.org/x/bluetooth"
@@ -17,163 +18,156 @@ const (
 )
 
 type Connection struct {
-    device    bluetooth.Device
-    crypt     encrypter.CubeEncrypter
-    srvcs     []bluetooth.DeviceService
-    chars     []bluetooth.DeviceCharacteristic
-    writeUUID bluetooth.UUID
+	device    bluetooth.Device
+	crypt     encrypter.CubeEncrypter
+	srvcs     []bluetooth.DeviceService
+	chars     []bluetooth.DeviceCharacteristic
+	writeUUID bluetooth.UUID
 }
 
-var Conn Connection
-
-func defaultCallback(buf []byte) {
-	decrypted := Conn.crypt.Decrypt(buf)
-	fmt.Print("Notification:")
-	encrypter.PrintBytes(decrypted)
-}
-
-func customCallback(callback func (buf []byte)) func (buf []byte){
-	newCallback := func (buf []byte) {
-		callback(Conn.crypt.Decrypt(buf))
-	}
-	return newCallback
-}
-
-func get_callback(callback func(buf []byte)) func(buf []byte) {
+func wrapCallback(crypt *encrypter.CubeEncrypter, callback func(buf []byte)) func(buf []byte) {
 	if callback == nil {
-		return defaultCallback
-	} else {
-		return customCallback(callback)
+		return func(buf []byte) {
+			decrypted := crypt.Decrypt(buf)
+			fmt.Print("Notification:")
+			encrypter.PrintBytes(decrypted)
+		}
+	}
+	return func(buf []byte) {
+		callback(crypt.Decrypt(buf))
 	}
 }
 
-func Setup(macAddress string, cubeType int, callback func(buf []byte)) error {
-	encrypter, err := encrypter.NewCubeEncrypter(macAddress, cubeType)
+func Setup(macAddress string, cubeType int, callback func(buf []byte)) (*Connection, error) {
+	crypt, err := encrypter.NewCubeEncrypter(macAddress, cubeType)
 	if err != nil {
 		log.Println(err)
-		return err
+		return nil, err
 	}
+	if cubeType != 1 {
+		return nil, errors.New("unknown cube type")
+	}
+
 	adapter := bluetooth.DefaultAdapter
 	if err := adapter.Enable(); err != nil {
 		log.Printf("Error turning on the bluetooth adapter: %s", err)
-		return err
+		return nil, err
 	}
 	var device bluetooth.ScanResult
 	err = adapter.Scan(func(adapter *bluetooth.Adapter, result bluetooth.ScanResult) {
 		if result.Address.String() == macAddress {
-			log.Println("Cube found!" + result.Address.String())
+			log.Println("Cube found! " + result.Address.String())
 			device = result
 			adapter.StopScan()
 		}
 	})
 	if err != nil {
 		log.Printf("Error: Scan failed: %s", err)
-		return err
+		return nil, err
 	}
 
 	conn, err := adapter.Connect(device.Address, bluetooth.ConnectionParams{})
 	if err != nil {
 		log.Printf("Connection error: %s", err)
-		return err
+		return nil, err
 	}
 	log.Printf("Connected: %v\n", conn.Address)
-	if cubeType == 1 {
-		parsedUUID, err := bluetooth.ParseUUID(WEILONG_SERVICE_UUID)
-		if err != nil {
-			log.Println(err)
-			return err
-		}
-		srvcs, err := conn.DiscoverServices([]bluetooth.UUID{parsedUUID})
-		if err != nil {
-			log.Printf("Error finding services: %s", err)
-			return err
-		}
-		var chars []bluetooth.DeviceCharacteristic
-		var writeUUID bluetooth.UUID
-		if len(srvcs) > 0 {
-			notifyUUID, err := bluetooth.ParseUUID(WEILONG_NOTIFY_UUID)
-			if err != nil {
-				log.Println(err)
-				return err
-			}
-			writeUUID, err = bluetooth.ParseUUID(WEILONG_WRITE_UUID)
-			if err != nil {
-				log.Print(err)
-				return err
-			}
 
-			chars, err = srvcs[0].DiscoverCharacteristics([]bluetooth.UUID{notifyUUID, writeUUID})
-			if err != nil {
-				log.Printf("Error discovering characteristics: %s", err)
-				return err
-			}
-			log.Printf("Characteristics: %v\n", chars)
-
-			for _, char := range chars {
-				if char.UUID() == notifyUUID {
-					callback = get_callback(callback)
-					err := char.EnableNotifications(callback)
-					if err != nil {
-						log.Println("Error setting up notifications: ", err)
-						return err
-					}
-					log.Println("Notifications have been set up")
-				}
-			}
-		}
-		Conn = Connection{
-			device:    conn,
-			crypt:     *encrypter,
-			srvcs:     srvcs,
-			chars:     chars,
-			writeUUID: writeUUID,
-		}
-	} else {
-		return errors.New("unknown cube type")
+	parsedUUID, err := bluetooth.ParseUUID(WEILONG_SERVICE_UUID)
+	if err != nil {
+		log.Println(err)
+		return nil, err
 	}
-	return nil
+	srvcs, err := conn.DiscoverServices([]bluetooth.UUID{parsedUUID})
+	if err != nil {
+		log.Printf("Error finding services: %s", err)
+		return nil, err
+	}
+	if len(srvcs) == 0 {
+		return nil, errors.New("cube service not found")
+	}
+
+	notifyUUID, err := bluetooth.ParseUUID(WEILONG_NOTIFY_UUID)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	writeUUID, err := bluetooth.ParseUUID(WEILONG_WRITE_UUID)
+	if err != nil {
+		log.Print(err)
+		return nil, err
+	}
+
+	chars, err := srvcs[0].DiscoverCharacteristics([]bluetooth.UUID{notifyUUID, writeUUID})
+	if err != nil {
+		log.Printf("Error discovering characteristics: %s", err)
+		return nil, err
+	}
+	log.Printf("Characteristics: %v\n", chars)
+
+	wrapped := wrapCallback(crypt, callback)
+	for _, char := range chars {
+		if char.UUID() == notifyUUID {
+			if err := char.EnableNotifications(wrapped); err != nil {
+				log.Println("Error setting up notifications: ", err)
+				return nil, err
+			}
+			log.Println("Notifications have been set up")
+		}
+	}
+
+	return &Connection{
+		device:    conn,
+		crypt:     *crypt,
+		srvcs:     srvcs,
+		chars:     chars,
+		writeUUID: writeUUID,
+	}, nil
 }
 
-func SendData(data []byte) {
-	for _, char := range Conn.chars {
-		if char.UUID() == Conn.writeUUID {
-			_, err := char.WriteWithoutResponse(Conn.crypt.Encrypt(data))
+func (c *Connection) SendData(data []byte) {
+	for _, char := range c.chars {
+		if char.UUID() == c.writeUUID {
+			_, err := char.WriteWithoutResponse(c.crypt.Encrypt(data))
 			if err != nil {
 				log.Printf("Error sending data: %v\n", err)
 				if data[0] == 0xA1 {
 					log.Print("Retrying in 100 ms")
 					time.Sleep(100 * time.Millisecond)
-					_, err = char.WriteWithoutResponse(Conn.crypt.Encrypt(data))
-					if err != nil {log.Println("Still failed: " + err.Error())} else {log.Println("Resolved!")}
+					_, err = char.WriteWithoutResponse(c.crypt.Encrypt(data))
+					if err != nil {
+						log.Println("Still failed: " + err.Error())
+					} else {
+						log.Println("Resolved!")
+					}
 				}
 			}
 		}
 	}
 }
 
-func Disconnect() error {
-    if len(Conn.srvcs) == 0 {
-        return errors.New("not connected")
-    }
-    notifyUUID, err := bluetooth.ParseUUID(WEILONG_NOTIFY_UUID)
-    if err != nil {
-        log.Printf("Error parsing notify UUID: %v", err)
-        return err
-    }
-    for _, char := range Conn.chars {
-        if char.UUID() == notifyUUID {
-            err := char.EnableNotifications(nil)
-            if err != nil {
-                log.Printf("Error disabling notification: %v", err)
-            }
-            break
-        }
-    }
-    err = Conn.device.Disconnect()
-    if err != nil {
-        log.Printf("Error disconnecting: %v", err)
-        return err
-    }
-    Conn = Connection{}
-    return nil
+func (c *Connection) Disconnect() error {
+	if len(c.srvcs) == 0 {
+		return nil
+	}
+	notifyUUID, err := bluetooth.ParseUUID(WEILONG_NOTIFY_UUID)
+	if err != nil {
+		log.Printf("Error parsing notify UUID: %v", err)
+		return err
+	}
+	for _, char := range c.chars {
+		if char.UUID() == notifyUUID {
+			if err := char.EnableNotifications(nil); err != nil {
+				log.Printf("Error disabling notification: %v", err)
+			}
+			break
+		}
+	}
+	err = c.device.Disconnect()
+	*c = Connection{}
+	if err != nil {
+		log.Printf("Error disconnecting: %v", err)
+		return err
+	}
+	return nil
 }
