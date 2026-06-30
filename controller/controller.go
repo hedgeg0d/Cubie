@@ -1,3 +1,5 @@
+//go:build linux
+
 package controller
 
 import (
@@ -40,10 +42,10 @@ type input_id struct {
 }
 
 const (
-	UI_SET_EVBIT   = 0x40045564
-	UI_SET_KEYBIT  = 0x40045565
-	UI_SET_ABSBIT  = 0x40045567
-	UI_DEV_CREATE  = 0x5501
+	UI_SET_EVBIT  = 0x40045564
+	UI_SET_KEYBIT = 0x40045565
+	UI_SET_ABSBIT = 0x40045567
+	UI_DEV_CREATE = 0x5501
 	UI_DEV_DESTROY = 0x5502
 
 	ABS_X          = 0x00
@@ -67,6 +69,27 @@ const (
 
 	UI_ABS_SETUP = 0x40145570
 )
+
+var Actions = []string{
+	"A", "B", "X", "Y",
+	"LB", "RB", "Select", "Start",
+	"DPad Up", "DPad Down", "DPad Left", "DPad Right",
+}
+
+var actionCodes = map[string]uint16{
+	"A":          BTN_A,
+	"B":          BTN_B,
+	"X":          BTN_X,
+	"Y":          BTN_Y,
+	"LB":         BTN_TL,
+	"RB":         BTN_TR,
+	"Select":     BTN_SELECT,
+	"Start":      BTN_START,
+	"DPad Up":    BTN_DPAD_UP,
+	"DPad Down":  BTN_DPAD_DOWN,
+	"DPad Left":  BTN_DPAD_LEFT,
+	"DPad Right": BTN_DPAD_RIGHT,
+}
 
 func (c *Controller) Init() error {
 	uinputFile, err := os.OpenFile("/dev/uinput", os.O_WRONLY|unix.O_NONBLOCK, 0666)
@@ -107,11 +130,21 @@ func (c *Controller) Init() error {
 		return err
 	}
 
-	if _, _, err := unix.Syscall(unix.SYS_IOCTL, c.uinputFile.Fd(), UI_DEV_CREATE, 0); err != 0 {
-		return err
+	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, c.uinputFile.Fd(), UI_DEV_CREATE, 0); errno != 0 {
+		return errno
 	}
 
 	return nil
+}
+
+func (c *Controller) Close() error {
+	if c.uinputFile == nil {
+		return nil
+	}
+	unix.Syscall(unix.SYS_IOCTL, c.uinputFile.Fd(), UI_DEV_DESTROY, 0)
+	err := c.uinputFile.Close()
+	c.uinputFile = nil
+	return err
 }
 
 func setupAbs(fd uintptr, code uint32, min, max int32) {
@@ -132,16 +165,14 @@ func setupAbs(fd uintptr, code uint32, min, max int32) {
 
 func (c *Controller) emit(eventType, code, value int32) {
 	ev := input_event{
-		Time:  unix.Timeval{},
 		Type:  uint16(eventType),
 		Code:  uint16(code),
 		Value: value,
 	}
 	buf := bytes.Buffer{}
 	binary.Write(&buf, binary.LittleEndian, &ev)
-	_, err := c.uinputFile.Write(buf.Bytes())
-	if err != nil {
-		log.Printf("Ошибка отправки события: %v", err)
+	if _, err := c.uinputFile.Write(buf.Bytes()); err != nil {
+		log.Printf("Error emitting event: %v", err)
 	}
 	if eventType != EV_SYN {
 		c.sync()
@@ -152,36 +183,14 @@ func (c *Controller) sync() {
 	c.emit(EV_SYN, SYN_REPORT, 0)
 }
 
-func (c *Controller) PressA(holdTime time.Duration) {
-	c.emit(EV_KEY, BTN_A, 1)
+func (c *Controller) Press(action string, holdTime time.Duration) {
+	code, ok := actionCodes[action]
+	if !ok || c.uinputFile == nil {
+		return
+	}
+	c.emit(EV_KEY, int32(code), 1)
 	time.Sleep(holdTime * time.Millisecond)
-	c.emit(EV_KEY, BTN_A, 0)
-}
-
-func (c *Controller) PressB(holdTime time.Duration) {
-	c.emit(EV_KEY, BTN_B, 1)
-	time.Sleep(holdTime * time.Millisecond)
-	c.emit(EV_KEY, BTN_B, 0)
-}
-
-func (c *Controller) PressX(holdTime time.Duration) {
-	c.emit(EV_KEY, BTN_X, 1)
-	time.Sleep(holdTime * time.Millisecond)
-	c.emit(EV_KEY, BTN_X, 0)
-}
-
-func (c *Controller) PressY(holdTime time.Duration) {
-	c.emit(EV_KEY, BTN_Y, 1)
-	time.Sleep(holdTime * time.Millisecond)
-	c.emit(EV_KEY, BTN_Y, 0)
-}
-
-func (c *Controller) HoldRight() {
-	c.emit(EV_KEY, BTN_DPAD_RIGHT, 1)
-}
-
-func (c *Controller) ReleaseRight() {
-	c.emit(EV_KEY, BTN_DPAD_RIGHT, 0)
+	c.emit(EV_KEY, int32(code), 0)
 }
 
 func ioctl(fd uintptr, req uint, data uintptr) error {
