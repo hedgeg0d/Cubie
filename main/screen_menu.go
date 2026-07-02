@@ -20,6 +20,7 @@ func (a *App) showMenu() {
 			widget.NewLabel(a.model),
 			batteryLabel,
 			widget.NewSeparator(),
+			widget.NewButton("3D Cube", a.showCube3D),
 			widget.NewButton("Controller", a.showController),
 			widget.NewButton("Timer", a.showTimer),
 			widget.NewButton("Blind Trainer", a.showBlind),

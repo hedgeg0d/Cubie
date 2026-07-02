@@ -2,11 +2,14 @@
 
 Desktop app for Bluetooth smart Rubik's cubes. Currently supports the **Weilong V10 AI**.
 
-Planned modes:
+Modes:
 
-- **Controller** — use the cube as a virtual gamepad (Linux `uinput`). *In progress.*
-- **Timer** — speedcubing timer with scramble generation and ao5/ao12 stats. *Planned.*
-- **Blind trainer** — memo/execution timing trainer for blindfold solving. *Planned.*
+- **3D Cube** — live software-rendered cube, drag with the mouse to rotate. Reflects the physical cube's turns. Press "Cube is solved (sync)" while the cube is solved to align the model.
+- **Controller** — use the cube as a virtual gamepad (Linux `uinput`).
+- **Timer** — speedcubing timer with scramble generation and ao5/ao12 stats.
+- **Blind trainer** — memo/execution timing trainer for blindfold solving.
+
+The 3D view tracks state by applying moves from the last sync point (a solved cube), so sync once before use.
 
 ## Requirements
 
