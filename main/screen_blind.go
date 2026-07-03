@@ -13,30 +13,33 @@ import (
 )
 
 const (
-	blindIdle = iota
+	blindScramble = iota
+	blindReady
 	blindMemo
 	blindExec
 )
 
 type blindCtl struct {
-	mu        sync.Mutex
-	phase     int
-	memoStart time.Time
-	execStart time.Time
-	memoMs    int64
-	stopFn    context.CancelFunc
+	mu         sync.Mutex
+	phase      int
+	idx        int
+	half       string
+	wrongStack []string
+	memoStart  time.Time
+	execStart  time.Time
+	memoMs     int64
+	stopFn     context.CancelFunc
 }
 
 func (a *App) showBlind() {
-	a.switchScreen(fyne.NewSize(650, 550), func(ctx context.Context) fyne.CanvasObject {
+	a.switchScreen(fyne.NewSize(650, 600), func(ctx context.Context) fyne.CanvasObject {
 		attempts := loadAttempts()
-		scramble := cubestate.GenerateScramble(20)
+		scramble := cubestate.GenerateScramble(scrambleLen)
 
-		scrambleLabel := widget.NewLabel(cubestate.ScrambleString(scramble))
-		scrambleLabel.Wrapping = fyne.TextWrapWord
+		scrambleGrid, scrambleTexts := newScrambleStrip(scrambleLen)
 		memoLabel := widget.NewLabel("Memo: 0.00")
 		execLabel := widget.NewLabel("Exec: 0.00")
-		hintLabel := widget.NewLabel("Scramble, then Start Memo")
+		hintLabel := widget.NewLabel("")
 		statsLabel := widget.NewLabel("")
 
 		refreshStats := func() {
@@ -65,11 +68,51 @@ func (a *App) showBlind() {
 
 		ctl := &blindCtl{}
 
+		setHint := func(text string) {
+			hintLabel.SetText(text)
+			hintLabel.Refresh()
+		}
+
+		updateScramble := func() {
+			ctl.mu.Lock()
+			phase, idx, half := ctl.phase, ctl.idx, ctl.half
+			errN := len(ctl.wrongStack)
+			undo := ""
+			if errN > 0 {
+				undo = cubestate.InvertMove(ctl.wrongStack[errN-1])
+			}
+			ctl.mu.Unlock()
+
+			paintScrambleStrip(scrambleTexts, scramble, idx, half, errN)
+
+			switch phase {
+			case blindReady:
+				setHint("Scrambled — press Start Memo")
+			case blindScramble:
+				if errN > 0 {
+					setHint("Wrong move — undo " + undo + "  (" + itoa(errN) + " to fix)")
+				} else if half != "" {
+					setHint("Double turn — one more " + half)
+				} else {
+					setHint("Scramble the cube: green done · white next")
+				}
+			}
+		}
+
 		newScramble := func() {
-			scramble = cubestate.GenerateScramble(20)
-			scrambleLabel.SetText(cubestate.ScrambleString(scramble))
-			scrambleLabel.Show()
-			scrambleLabel.Refresh()
+			scramble = cubestate.GenerateScramble(scrambleLen)
+			ctl.mu.Lock()
+			ctl.phase = blindScramble
+			ctl.idx = 0
+			ctl.half = ""
+			ctl.wrongStack = nil
+			ctl.mu.Unlock()
+			memoLabel.SetText("Memo: 0.00")
+			execLabel.SetText("Exec: 0.00")
+			memoLabel.Refresh()
+			execLabel.Refresh()
+			scrambleGrid.Show()
+			updateScramble()
 		}
 
 		record := func(execMs int64, success bool) {
@@ -83,18 +126,12 @@ func (a *App) showBlind() {
 			saveAttempts(attempts)
 			refreshStats()
 			list.Refresh()
-			if success {
-				hintLabel.SetText("Solved! Start Memo for next")
-			} else {
-				hintLabel.SetText("Missed. Start Memo for next")
-			}
-			hintLabel.Refresh()
 			newScramble()
 		}
 
 		startMemo := widget.NewButton("Start Memo", func() {
 			ctl.mu.Lock()
-			if ctl.phase != blindIdle {
+			if ctl.phase != blindReady {
 				ctl.mu.Unlock()
 				return
 			}
@@ -103,8 +140,8 @@ func (a *App) showBlind() {
 			start := ctl.memoStart
 			ctl.mu.Unlock()
 
-			hintLabel.SetText("Memorize, then turn to start solving")
-			hintLabel.Refresh()
+			scrambleGrid.Hide()
+			setHint("Memorize, then turn to start solving")
 
 			go func() {
 				ticker := time.NewTicker(50 * time.Millisecond)
@@ -127,67 +164,77 @@ func (a *App) showBlind() {
 			}()
 		})
 
-		a.cube.OnMove = func(string) {
+		a.cube.OnMove = func(move string) {
 			ctl.mu.Lock()
-			if ctl.phase != blindMemo {
-				ctl.mu.Unlock()
-				return
-			}
-			ctl.phase = blindExec
-			ctl.memoMs = time.Since(ctl.memoStart).Milliseconds()
-			ctl.execStart = time.Now()
-			sctx, cancel := context.WithCancel(ctx)
-			ctl.stopFn = cancel
-			execStart := ctl.execStart
-			memoMs := ctl.memoMs
-			ctl.mu.Unlock()
-
-			scrambleLabel.Hide()
-			memoLabel.SetText("Memo: " + formatMs(memoMs))
-			memoLabel.Refresh()
-			hintLabel.SetText("Solving blind...")
-			hintLabel.Refresh()
-
-			go func() {
-				ticker := time.NewTicker(30 * time.Millisecond)
-				defer ticker.Stop()
-				for {
-					select {
-					case <-sctx.Done():
-						return
-					case <-ticker.C:
-						execLabel.SetText("Exec: " + formatMs(time.Since(execStart).Milliseconds()))
-						execLabel.Refresh()
+			switch ctl.phase {
+			case blindScramble:
+				var advanced bool
+				ctl.half, ctl.wrongStack, advanced = scrambleStep(scramble[ctl.idx], move, ctl.half, ctl.wrongStack)
+				if advanced {
+					ctl.idx++
+					if ctl.idx == len(scramble) {
+						ctl.phase = blindReady
 					}
 				}
-			}()
+				ctl.mu.Unlock()
+				updateScramble()
+			case blindMemo:
+				ctl.phase = blindExec
+				ctl.memoMs = time.Since(ctl.memoStart).Milliseconds()
+				ctl.execStart = time.Now()
+				sctx, cancel := context.WithCancel(ctx)
+				ctl.stopFn = cancel
+				execStart := ctl.execStart
+				memoMs := ctl.memoMs
+				ctl.mu.Unlock()
 
-			go func() {
-				for {
-					select {
-					case <-sctx.Done():
-						return
-					default:
+				memoLabel.SetText("Memo: " + formatMs(memoMs))
+				memoLabel.Refresh()
+				setHint("Solving blind...")
+
+				go func() {
+					ticker := time.NewTicker(30 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-sctx.Done():
+							return
+						case <-ticker.C:
+							execLabel.SetText("Exec: " + formatMs(time.Since(execStart).Milliseconds()))
+							execLabel.Refresh()
+						}
 					}
-					a.cube.UpdateState()
-					if a.cube.IsSolved() {
-						ctl.mu.Lock()
-						if ctl.phase != blindExec {
+				}()
+
+				go func() {
+					for {
+						select {
+						case <-sctx.Done():
+							return
+						default:
+						}
+						a.cube.UpdateState()
+						if a.cube.IsSolved() {
+							ctl.mu.Lock()
+							if ctl.phase != blindExec {
+								ctl.mu.Unlock()
+								return
+							}
+							ctl.phase = blindScramble
+							elapsed := time.Since(execStart).Milliseconds()
+							ctl.stopFn()
 							ctl.mu.Unlock()
+							execLabel.SetText("Exec: " + formatMs(elapsed))
+							execLabel.Refresh()
+							record(elapsed, true)
 							return
 						}
-						ctl.phase = blindIdle
-						elapsed := time.Since(execStart).Milliseconds()
-						ctl.stopFn()
-						ctl.mu.Unlock()
-						execLabel.SetText("Exec: " + formatMs(elapsed))
-						execLabel.Refresh()
-						record(elapsed, true)
-						return
+						time.Sleep(120 * time.Millisecond)
 					}
-					time.Sleep(120 * time.Millisecond)
-				}
-			}()
+				}()
+			default:
+				ctl.mu.Unlock()
+			}
 		}
 
 		giveUp := widget.NewButton("Give Up", func() {
@@ -196,7 +243,6 @@ func (a *App) showBlind() {
 				ctl.mu.Unlock()
 				return
 			}
-			ctl.phase = blindIdle
 			elapsed := time.Since(ctl.execStart).Milliseconds()
 			if ctl.stopFn != nil {
 				ctl.stopFn()
@@ -205,10 +251,11 @@ func (a *App) showBlind() {
 			record(elapsed, false)
 		})
 
+		newScramble()
 		refreshStats()
 
 		controls := container.NewHBox(startMemo, giveUp, widget.NewButton("Back", a.showMenu))
-		top := container.NewVBox(scrambleLabel, memoLabel, execLabel, hintLabel, statsLabel, controls)
+		top := container.NewVBox(card(scrambleGrid), memoLabel, execLabel, hintLabel, statsLabel, controls)
 		return container.NewBorder(top, nil, nil, nil, list)
 	})
 }

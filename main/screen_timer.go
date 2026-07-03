@@ -51,11 +51,6 @@ const (
 const scrambleLen = 20
 
 var (
-	colDone  = color.RGBA{40, 200, 80, 255}
-	colWrong = color.RGBA{225, 55, 55, 255}
-	colNext  = color.RGBA{240, 240, 240, 255}
-	colTodo  = color.RGBA{110, 113, 130, 255}
-
 	segIdle    = color.RGBA{205, 208, 222, 255}
 	segRunning = color.RGBA{0x7C, 0x5C, 0xFF, 255}
 	segDone    = color.RGBA{52, 211, 153, 255}
@@ -107,17 +102,7 @@ func (a *App) showTimer() {
 		solves := loadSolves()
 		scramble := cubestate.GenerateScramble(scrambleLen)
 
-		scrambleTexts := make([]*canvas.Text, scrambleLen)
-		scrambleObjs := make([]fyne.CanvasObject, scrambleLen)
-		for i := range scrambleTexts {
-			t := canvas.NewText("", colTodo)
-			t.TextSize = 22
-			t.TextStyle = fyne.TextStyle{Bold: true}
-			t.Alignment = fyne.TextAlignCenter
-			scrambleTexts[i] = t
-			scrambleObjs[i] = t
-		}
-		scrambleGrid := container.NewGridWrap(fyne.NewSize(48, 34), scrambleObjs...)
+		scrambleGrid, scrambleTexts := newScrambleStrip(scrambleLen)
 
 		display := NewRollingTimer()
 		display.minSize = fyne.NewSize(380, 140)
@@ -222,24 +207,7 @@ func (a *App) showTimer() {
 			}
 			ctl.mu.Unlock()
 
-			for i, t := range scrambleTexts {
-				t.Text = scramble[i]
-				if i == idx && half != "" {
-					t.Text = half
-				}
-				t.TextStyle = fyne.TextStyle{Bold: true}
-				switch {
-				case i < idx:
-					t.Color = colDone
-				case i == idx && errN > 0:
-					t.Color = colWrong
-				case i == idx:
-					t.Color = colNext
-				default:
-					t.Color = colTodo
-				}
-				t.Refresh()
-			}
+			paintScrambleStrip(scrambleTexts, scramble, idx, half, errN)
 
 			switch phase {
 			case tsSolving:
