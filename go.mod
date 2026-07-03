@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	fyne.io/fyne/v2 v2.5.4
+	golang.org/x/image v0.18.0
 	golang.org/x/sys v0.20.0
 	tinygo.org/x/bluetooth v0.11.0
 )
@@ -41,7 +42,6 @@ require (
 	github.com/tinygo-org/pio v0.0.0-20231216154340-cd888eb58899 // indirect
 	github.com/yuin/goldmark v1.7.1 // indirect
 	golang.org/x/exp v0.0.0-20230728194245-b0cb94b80691 // indirect
-	golang.org/x/image v0.18.0 // indirect
 	golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a // indirect
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/text v0.16.0 // indirect

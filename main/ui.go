@@ -72,6 +72,19 @@ func newMovesStrip() (fyne.CanvasObject, func([]string)) {
 	return strip, update
 }
 
+func statCard(title string) (fyne.CanvasObject, *canvas.Text) {
+	value := heading("--", 22)
+	value.Alignment = fyne.TextAlignCenter
+	label := caption(title)
+	label.Alignment = fyne.TextAlignCenter
+	bg := canvas.NewRectangle(surfaceColor)
+	bg.CornerRadius = 12
+	bg.StrokeColor = borderColor
+	bg.StrokeWidth = 1
+	content := container.NewVBox(container.NewCenter(value), container.NewCenter(label))
+	return container.NewStack(bg, container.NewPadded(content)), value
+}
+
 func pill(text *canvas.Text, accent color.Color) fyne.CanvasObject {
 	bg := canvas.NewRectangle(surfaceColor)
 	bg.CornerRadius = 14

@@ -26,7 +26,11 @@ var (
 	colDone  = color.RGBA{40, 200, 80, 255}
 	colWrong = color.RGBA{225, 55, 55, 255}
 	colNext  = color.RGBA{240, 240, 240, 255}
-	colTodo  = color.RGBA{120, 120, 120, 255}
+	colTodo  = color.RGBA{110, 113, 130, 255}
+
+	segIdle    = color.RGBA{205, 208, 222, 255}
+	segRunning = color.RGBA{0x7C, 0x5C, 0xFF, 255}
+	segDone    = color.RGBA{52, 211, 153, 255}
 )
 
 type timerCtl struct {
@@ -39,7 +43,7 @@ type timerCtl struct {
 }
 
 func (a *App) showTimer() {
-	a.switchScreen(fyne.NewSize(680, 560), func(ctx context.Context) fyne.CanvasObject {
+	a.switchScreen(fyne.NewSize(780, 880), func(ctx context.Context) fyne.CanvasObject {
 		solves := loadSolves()
 		scramble := cubestate.GenerateScrambleQuarter(scrambleLen)
 
@@ -47,22 +51,53 @@ func (a *App) showTimer() {
 		scrambleObjs := make([]fyne.CanvasObject, scrambleLen)
 		for i := range scrambleTexts {
 			t := canvas.NewText("", colTodo)
-			t.TextSize = 20
+			t.TextSize = 22
+			t.TextStyle = fyne.TextStyle{Bold: true}
 			t.Alignment = fyne.TextAlignCenter
 			scrambleTexts[i] = t
 			scrambleObjs[i] = t
 		}
-		scrambleGrid := container.NewGridWrap(fyne.NewSize(46, 30), scrambleObjs...)
+		scrambleGrid := container.NewGridWrap(fyne.NewSize(48, 34), scrambleObjs...)
 
-		timeLabel := widget.NewLabel("0.00")
-		timeLabel.TextStyle = fyne.TextStyle{Bold: true}
-		hintLabel := widget.NewLabel("")
-		statsLabel := widget.NewLabel("")
+		display := NewRollingTimer()
+		display.minSize = fyne.NewSize(380, 140)
+		hintLabel := caption("")
+		hintLabel.Alignment = fyne.TextAlignCenter
+
+		bestCard, bestVal := statCard("best")
+		ao5Card, ao5Val := statCard("ao5")
+		ao12Card, ao12Val := statCard("ao12")
+		meanCard, meanVal := statCard("mean")
+		statsRow := container.NewGridWithColumns(4, bestCard, ao5Card, ao12Card, meanCard)
 
 		ctl := &timerCtl{}
 
+		refreshStats := func() {
+			bestVal.Text = formatMs(best(solves))
+			ao5Val.Text = formatMs(averageOf(solves, 5))
+			ao12Val.Text = formatMs(averageOf(solves, 12))
+			meanVal.Text = formatMs(mean(solves))
+			bestVal.Refresh()
+			ao5Val.Refresh()
+			ao12Val.Refresh()
+			meanVal.Refresh()
+		}
+
+		list := widget.NewList(
+			func() int { return len(solves) },
+			func() fyne.CanvasObject { return widget.NewLabel("") },
+			func(i widget.ListItemID, o fyne.CanvasObject) {
+				s := solves[len(solves)-1-i]
+				label := formatMs(s.Ms)
+				if s.Penalty != "" {
+					label += "  (" + s.Penalty + ")"
+				}
+				o.(*widget.Label).SetText(label)
+			},
+		)
+
 		setHint := func(text string) {
-			hintLabel.SetText(text)
+			hintLabel.Text = text
 			hintLabel.Refresh()
 		}
 
@@ -78,16 +113,14 @@ func (a *App) showTimer() {
 
 			for i, t := range scrambleTexts {
 				t.Text = scramble[i]
-				t.TextStyle = fyne.TextStyle{}
+				t.TextStyle = fyne.TextStyle{Bold: true}
 				switch {
 				case i < idx:
 					t.Color = colDone
 				case i == idx && errN > 0:
 					t.Color = colWrong
-					t.TextStyle = fyne.TextStyle{Bold: true}
 				case i == idx:
 					t.Color = colNext
-					t.TextStyle = fyne.TextStyle{Bold: true}
 				default:
 					t.Color = colTodo
 				}
@@ -97,39 +130,15 @@ func (a *App) showTimer() {
 			switch phase {
 			case tsSolving:
 			case tsReady:
-				setHint("Scrambled! Turn to start the solve")
+				setHint("Scrambled — turn to start the solve")
 			default:
 				if errN > 0 {
-					setHint("Wrong move — undo " + undo + " (" + itoa(errN) + " to fix)")
+					setHint("Wrong move — undo " + undo + "  (" + itoa(errN) + " to fix)")
 				} else {
-					setHint("Scramble: green = done, white = next")
+					setHint("Scramble the cube: green done · white next")
 				}
 			}
 		}
-
-		refreshStats := func() {
-			statsLabel.SetText(
-				"best: " + formatMs(best(solves)) +
-					"   ao5: " + formatMs(averageOf(solves, 5)) +
-					"   ao12: " + formatMs(averageOf(solves, 12)) +
-					"   mean: " + formatMs(mean(solves)) +
-					"   solves: " + itoa(len(solves)),
-			)
-			statsLabel.Refresh()
-		}
-
-		list := widget.NewList(
-			func() int { return len(solves) },
-			func() fyne.CanvasObject { return widget.NewLabel("") },
-			func(i widget.ListItemID, o fyne.CanvasObject) {
-				s := solves[len(solves)-1-i]
-				label := formatMs(s.Ms)
-				if s.Penalty != "" {
-					label += " (" + s.Penalty + ")"
-				}
-				o.(*widget.Label).SetText(label)
-			},
-		)
 
 		resetScramble := func() {
 			scramble = cubestate.GenerateScrambleQuarter(scrambleLen)
@@ -138,8 +147,8 @@ func (a *App) showTimer() {
 			ctl.idx = 0
 			ctl.wrongStack = nil
 			ctl.mu.Unlock()
-			timeLabel.SetText("0.00")
-			timeLabel.Refresh()
+			display.SetColor(segIdle)
+			display.SetText("0.00")
 			updateUI()
 		}
 
@@ -150,11 +159,13 @@ func (a *App) showTimer() {
 				At:       time.Now().Unix(),
 			})
 			saveSolves(solves)
-			timeLabel.SetText(formatMs(elapsed))
-			timeLabel.Refresh()
+			display.SetColor(segDone)
+			display.SetText(formatMs(elapsed))
 			refreshStats()
 			list.Refresh()
 			resetScramble()
+			display.SetColor(segDone)
+			display.SetText(formatMs(elapsed))
 			setHint("Solved " + formatMs(elapsed) + " — scramble again")
 		}
 
@@ -167,6 +178,7 @@ func (a *App) showTimer() {
 			start := ctl.start
 			ctl.mu.Unlock()
 
+			display.SetColor(segRunning)
 			setHint("Solving...")
 
 			go func() {
@@ -177,8 +189,7 @@ func (a *App) showTimer() {
 					case <-sctx.Done():
 						return
 					case <-ticker.C:
-						timeLabel.SetText(formatMs(time.Since(start).Milliseconds()))
-						timeLabel.Refresh()
+						display.SetText(formatMs(time.Since(start).Milliseconds()))
 					}
 				}
 			}()
@@ -266,15 +277,40 @@ func (a *App) showTimer() {
 		resetScramble()
 		refreshStats()
 
-		controls := container.NewHBox(
-			widget.NewButton("+2", func() { penalty("+2") }),
-			widget.NewButton("DNF", func() { penalty("DNF") }),
-			widget.NewButton("Delete", deleteLast),
-			widget.NewButton("New Scramble", resetScramble),
-			widget.NewButton("Back", a.showMenu),
+		plus2 := widget.NewButton("+2", func() { penalty("+2") })
+		plus2.Importance = widget.WarningImportance
+		dnf := widget.NewButton("DNF", func() { penalty("DNF") })
+		dnf.Importance = widget.DangerImportance
+		del := widget.NewButton("Delete", deleteLast)
+		newScr := widget.NewButton("New Scramble", resetScramble)
+		newScr.Importance = widget.HighImportance
+		controls := container.NewGridWithColumns(4, plus2, dnf, del, newScr)
+
+		header := container.NewBorder(nil, nil,
+			heading("Timer", 26), widget.NewButton("Back", a.showMenu),
 		)
 
-		top := container.NewVBox(scrambleGrid, timeLabel, hintLabel, statsLabel, controls)
-		return container.NewBorder(top, nil, nil, nil, list)
+		timerCard := card(container.NewVBox(
+			container.NewCenter(container.NewGridWrap(fyne.NewSize(420, 150), display)),
+			hintLabel,
+		))
+
+		top := container.NewVBox(
+			container.NewPadded(header),
+			card(scrambleGrid),
+			timerCard,
+			statsRow,
+			container.NewPadded(controls),
+		)
+
+		reserve := container.NewGridWrap(
+			fyne.NewSize(1, 195),
+			canvas.NewRectangle(color.RGBA{0, 0, 0, 0}),
+		)
+
+		return container.NewPadded(container.NewBorder(
+			top, reserve, nil, nil,
+			card(list),
+		))
 	})
 }
