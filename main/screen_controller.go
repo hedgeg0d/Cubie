@@ -106,10 +106,13 @@ func (a *App) showController() {
 		}
 		publish()
 
+		pad := NewGamepadView()
+
 		a.cube.OnMove = func(move string) {
 			s := cfg.Load()
 			action, ok := s.Bindings[move]
 			if ok && action != "" && action != actionNone {
+				pad.Flash(action)
 				go c.Press(action, time.Duration(s.HoldMs))
 			}
 		}
@@ -124,16 +127,21 @@ func (a *App) showController() {
 			container.NewTabItem("Live", buildLiveTab(sphere, preview, &settings, publish)),
 		)
 
-		a.runGyroController(ctx, c, &cfg, sphere, preview)
+		a.runGyroController(ctx, c, &cfg, sphere, preview, pad)
 
 		save := widget.NewButton("Save", func() {
 			writeJSON(controllerSettingsFile, settings)
 		})
 		save.Importance = widget.HighImportance
 
+		bottom := container.NewVBox(
+			card(container.NewVBox(caption("Input monitor"), container.NewCenter(pad))),
+			container.NewPadded(container.NewHBox(save, widget.NewButton("Back", a.showMenu))),
+		)
+
 		return container.NewBorder(
 			container.NewPadded(heading("Controller builder", 24)),
-			container.NewPadded(container.NewHBox(save, widget.NewButton("Back", a.showMenu))),
+			bottom,
 			nil, nil,
 			tabs,
 		)

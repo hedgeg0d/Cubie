@@ -230,7 +230,7 @@ func buildLiveTab(sphere *GyroSphere, preview *gyroPreview, settings *Controller
 	))
 }
 
-func (a *App) runGyroController(ctx context.Context, c *controller.Controller, cfg *atomic.Pointer[ControllerSettings], sphere *GyroSphere, preview *gyroPreview) {
+func (a *App) runGyroController(ctx context.Context, c *controller.Controller, cfg *atomic.Pointer[ControllerSettings], sphere *GyroSphere, preview *gyroPreview, pad *GamepadView) {
 	go func() {
 		ticker := time.NewTicker(16 * time.Millisecond)
 		defer ticker.Stop()
@@ -246,13 +246,16 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 			for i, tb := range s.TiltBindings {
 				if i < len(active) && active[i] && tb.Mode == "hold" {
 					c.SetButton(tb.Action, false)
+					pad.SetButton(tb.Action, false)
 				}
 			}
 			for _, ab := range s.AxisBindings {
 				if code, ok := controller.AxisCode(ab.Target); ok {
 					c.SetAxis(code, 0)
 				}
+				pad.SetAxis(ab.Target, 0)
 			}
+			pad.Poke()
 		}
 
 		for {
@@ -291,6 +294,7 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 					}
 					v := angleToAxis(eulerComponent(e, ab.Source), ab.Deadzone, ab.Range, ab.Invert)
 					w(controller.EV_ABS, int32(code), v)
+					pad.SetAxis(ab.Target, v)
 				}
 			})
 
@@ -309,13 +313,16 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 					active[i] = true
 					if tb.Mode == "tap" {
 						go c.Press(tb.Action, time.Duration(s.HoldMs))
+						pad.Flash(tb.Action)
 					} else {
 						c.SetButton(tb.Action, true)
+						pad.SetButton(tb.Action, true)
 					}
 				} else if active[i] && val < offT {
 					active[i] = false
 					if tb.Mode != "tap" {
 						c.SetButton(tb.Action, false)
+						pad.SetButton(tb.Action, false)
 					}
 				}
 			}
@@ -324,6 +331,7 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 			if tick%4 == 0 {
 				sphere.SetQuaternion(displayed)
 				updatePreview(preview, e, s)
+				pad.Poke()
 			}
 		}
 	}()
