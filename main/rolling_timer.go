@@ -111,7 +111,16 @@ func (r *RollingTimer) setCells(s string) {
 func (r *RollingTimer) SetText(s string) {
 	r.mu.Lock()
 	if len(s) != len(r.cells) {
+		old := len(r.cells)
 		r.setCells(s)
+		if len(s) > old {
+			now := time.Now()
+			for i := 0; i < len(s)-old; i++ {
+				r.cells[i].prev = ' '
+				r.cells[i].animating = true
+				r.cells[i].start = now
+			}
+		}
 	} else {
 		now := time.Now()
 		for i, ch := range s {
