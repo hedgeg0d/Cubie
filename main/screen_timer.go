@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"image/color"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,10 +34,41 @@ var (
 	segDone    = color.RGBA{52, 211, 153, 255}
 )
 
+func scrambleStep(cur, move, half string, wrongStack []string) (string, []string, bool) {
+	if len(wrongStack) > 0 {
+		top := wrongStack[len(wrongStack)-1]
+		if move == cubestate.InvertMove(top) {
+			return half, wrongStack[:len(wrongStack)-1], false
+		}
+		return half, append(wrongStack, move), false
+	}
+	if strings.HasSuffix(cur, "2") {
+		face := cur[:1]
+		if half == "" {
+			if move == face || move == face+"'" {
+				return move, wrongStack, false
+			}
+			return half, append(wrongStack, move), false
+		}
+		if move == half {
+			return "", wrongStack, true
+		}
+		if move == cubestate.InvertMove(half) {
+			return "", wrongStack, false
+		}
+		return half, append(wrongStack, move), false
+	}
+	if move == cur {
+		return half, wrongStack, true
+	}
+	return half, append(wrongStack, move), false
+}
+
 type timerCtl struct {
 	mu         sync.Mutex
 	phase      int
 	idx        int
+	half       string
 	wrongStack []string
 	start      time.Time
 	stopFn     context.CancelFunc
@@ -45,7 +77,7 @@ type timerCtl struct {
 func (a *App) showTimer() {
 	a.switchScreen(fyne.NewSize(780, 880), func(ctx context.Context) fyne.CanvasObject {
 		solves := loadSolves()
-		scramble := cubestate.GenerateScrambleQuarter(scrambleLen)
+		scramble := cubestate.GenerateScramble(scrambleLen)
 
 		scrambleTexts := make([]*canvas.Text, scrambleLen)
 		scrambleObjs := make([]fyne.CanvasObject, scrambleLen)
@@ -104,6 +136,7 @@ func (a *App) showTimer() {
 		updateUI := func() {
 			ctl.mu.Lock()
 			phase, idx := ctl.phase, ctl.idx
+			half := ctl.half
 			errN := len(ctl.wrongStack)
 			undo := ""
 			if errN > 0 {
@@ -113,6 +146,9 @@ func (a *App) showTimer() {
 
 			for i, t := range scrambleTexts {
 				t.Text = scramble[i]
+				if i == idx && half != "" {
+					t.Text = half
+				}
 				t.TextStyle = fyne.TextStyle{Bold: true}
 				switch {
 				case i < idx:
@@ -134,6 +170,8 @@ func (a *App) showTimer() {
 			default:
 				if errN > 0 {
 					setHint("Wrong move — undo " + undo + "  (" + itoa(errN) + " to fix)")
+				} else if half != "" {
+					setHint("Double turn — one more " + half)
 				} else {
 					setHint("Scramble the cube: green done · white next")
 				}
@@ -141,10 +179,11 @@ func (a *App) showTimer() {
 		}
 
 		resetScramble := func() {
-			scramble = cubestate.GenerateScrambleQuarter(scrambleLen)
+			scramble = cubestate.GenerateScramble(scrambleLen)
 			ctl.mu.Lock()
 			ctl.phase = tsScramble
 			ctl.idx = 0
+			ctl.half = ""
 			ctl.wrongStack = nil
 			ctl.mu.Unlock()
 			display.SetColor(segIdle)
@@ -224,20 +263,13 @@ func (a *App) showTimer() {
 			ctl.mu.Lock()
 			switch ctl.phase {
 			case tsScramble:
-				if len(ctl.wrongStack) > 0 {
-					top := ctl.wrongStack[len(ctl.wrongStack)-1]
-					if move == cubestate.InvertMove(top) {
-						ctl.wrongStack = ctl.wrongStack[:len(ctl.wrongStack)-1]
-					} else {
-						ctl.wrongStack = append(ctl.wrongStack, move)
-					}
-				} else if move == scramble[ctl.idx] {
+				var advanced bool
+				ctl.half, ctl.wrongStack, advanced = scrambleStep(scramble[ctl.idx], move, ctl.half, ctl.wrongStack)
+				if advanced {
 					ctl.idx++
 					if ctl.idx == len(scramble) {
 						ctl.phase = tsReady
 					}
-				} else {
-					ctl.wrongStack = append(ctl.wrongStack, move)
 				}
 				ctl.mu.Unlock()
 				updateUI()
