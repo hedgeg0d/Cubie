@@ -6,7 +6,7 @@ Modes:
 
 - **3D Cube** — live software-rendered cube, drag with the mouse to rotate. Reflects the physical cube's turns. Press "Cube is solved (sync)" while the cube is solved to align the model.
 - **Controller** — use the cube as a virtual gamepad (Linux `uinput`). Bind face turns to buttons, and bind the gyroscope to buttons (tilt gestures) or analog axes.
-- **Timer** — speedcubing timer with scramble generation (including double turns like `U2`) and ao5/ao12 stats. Double turns can be executed either direction — after the first quarter the guidance shows the single turn (`U` or `U'`) needed to finish.
+- **Timer** — speedcubing timer with scramble generation (including double turns like `U2`) and ao5/ao12 stats. Double turns can be executed either direction — after the first quarter the guidance shows the single turn (`U` or `U'`) needed to finish. Select a solve in the list to apply +2/DNF, delete it, or open **Details** (also via double-click) showing scramble, the recorded move sequence and cube rotations, and TPS. Cube rotations are inferred from the gyroscope during the solve, so they are approximate.
 - **Blind trainer** — memo/execution timing trainer for blindfold solving.
 
 The 3D view tracks state by applying moves from the last sync point (a solved cube), so sync once before use.

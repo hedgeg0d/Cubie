@@ -54,3 +54,31 @@ func TestScrambleStepDoubleWrongThenUndo(t *testing.T) {
 		t.Fatalf("undoing wrong move should keep half and clear stack, got half=%q wrong=%v", half, wrong)
 	}
 }
+
+func TestDominantRotation(t *testing.T) {
+	if l, _ := dominantRotation(Euler{Pitch: 88, Roll: 3, Yaw: -5}); l != "x" {
+		t.Fatalf("want x got %s", l)
+	}
+	if l, _ := dominantRotation(Euler{Pitch: -2, Roll: -90, Yaw: 4}); l != "y'" {
+		t.Fatalf("want y' got %s", l)
+	}
+	if l, _ := dominantRotation(Euler{Pitch: 10, Roll: -8, Yaw: 95}); l != "z" {
+		t.Fatalf("want z got %s", l)
+	}
+}
+
+func TestSolveEventSplit(t *testing.T) {
+	s := Solve{Events: []SolveEvent{
+		{T: 100, Kind: "move", Val: "R"},
+		{T: 200, Kind: "rot", Val: "y"},
+		{T: 300, Kind: "move", Val: "U'"},
+	}}
+	mv := s.moves()
+	rot := s.rotations()
+	if len(mv) != 2 || mv[0] != "R" || mv[1] != "U'" {
+		t.Fatalf("moves wrong: %v", mv)
+	}
+	if len(rot) != 1 || rot[0] != "y" {
+		t.Fatalf("rotations wrong: %v", rot)
+	}
+}

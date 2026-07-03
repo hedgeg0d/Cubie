@@ -3,17 +3,51 @@ package main
 import (
 	"context"
 	"image/color"
+	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"cubie/cube"
 	"cubie/cubestate"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
+
+const rotationThreshold = 70.0
+
+func fallback(s, alt string) string {
+	if s == "" {
+		return alt
+	}
+	return s
+}
+
+func dominantRotation(e Euler) (string, float64) {
+	ax, ay, az := math.Abs(e.Pitch), math.Abs(e.Roll), math.Abs(e.Yaw)
+	switch {
+	case ax >= ay && ax >= az:
+		if e.Pitch >= 0 {
+			return "x", ax
+		}
+		return "x'", ax
+	case ay >= az:
+		if e.Roll >= 0 {
+			return "y", ay
+		}
+		return "y'", ay
+	default:
+		if e.Yaw >= 0 {
+			return "z", az
+		}
+		return "z'", az
+	}
+}
 
 const (
 	tsScramble = iota
@@ -70,6 +104,7 @@ type timerCtl struct {
 	idx        int
 	half       string
 	wrongStack []string
+	events     []SolveEvent
 	start      time.Time
 	stopFn     context.CancelFunc
 }
@@ -128,6 +163,51 @@ func (a *App) showTimer() {
 			},
 		)
 
+		selected := -1
+
+		showDetails := func() {
+			if selected < 0 || selected >= len(solves) {
+				return
+			}
+			s := solves[len(solves)-1-selected]
+			mv := s.moves()
+			rot := s.rotations()
+			tps := ""
+			if s.Ms > 0 && len(mv) > 0 {
+				tps = "  ·  " + strconv.FormatFloat(float64(len(mv))/(float64(s.Ms)/1000), 'f', 2, 64) + " tps"
+			}
+			penalty := s.Penalty
+			if penalty == "" {
+				penalty = "none"
+			}
+			rows := container.NewVBox(
+				heading(formatMs(s.Ms)+tps, 22),
+				caption(time.Unix(s.At, 0).Format("2006-01-02 15:04")+"   ·   penalty: "+penalty),
+				widget.NewSeparator(),
+				caption("Scramble"),
+				widget.NewLabel(s.Scramble),
+				caption("Moves ("+itoa(len(mv))+")"),
+				widget.NewLabel(fallback(strings.Join(mv, " "), "not recorded")),
+				caption("Rotations ("+itoa(len(rot))+")"),
+				widget.NewLabel(fallback(strings.Join(rot, " "), "none")),
+			)
+			d := dialog.NewCustom("Solve details", "Close", container.NewVScroll(rows), a.window)
+			d.Resize(fyne.NewSize(520, 460))
+			d.Show()
+		}
+
+		var lastSel widget.ListItemID = -1
+		var lastSelAt time.Time
+		list.OnSelected = func(id widget.ListItemID) {
+			selected = id
+			if id == lastSel && time.Since(lastSelAt) < 500*time.Millisecond {
+				showDetails()
+			}
+			lastSel = id
+			lastSelAt = time.Now()
+		}
+		list.OnUnselected = func(widget.ListItemID) { selected = -1 }
+
 		setHint := func(text string) {
 			hintLabel.Text = text
 			hintLabel.Refresh()
@@ -185,6 +265,7 @@ func (a *App) showTimer() {
 			ctl.idx = 0
 			ctl.half = ""
 			ctl.wrongStack = nil
+			ctl.events = nil
 			ctl.mu.Unlock()
 			display.SetColor(segIdle)
 			display.SetText("0.00")
@@ -192,12 +273,19 @@ func (a *App) showTimer() {
 		}
 
 		finalize := func(elapsed int64) {
+			ctl.mu.Lock()
+			events := ctl.events
+			ctl.events = nil
+			ctl.mu.Unlock()
 			solves = append(solves, Solve{
 				Ms:       elapsed,
 				Scramble: cubestate.ScrambleString(scramble),
 				At:       time.Now().Unix(),
+				Events:   events,
 			})
 			saveSolves(solves)
+			selected = -1
+			list.UnselectAll()
 			display.SetColor(segDone)
 			display.SetText(formatMs(elapsed))
 			refreshStats()
@@ -212,6 +300,7 @@ func (a *App) showTimer() {
 			ctl.mu.Lock()
 			ctl.phase = tsSolving
 			ctl.start = time.Now()
+			ctl.events = nil
 			sctx, cancel := context.WithCancel(ctx)
 			ctl.stopFn = cancel
 			start := ctl.start
@@ -229,6 +318,38 @@ func (a *App) showTimer() {
 						return
 					case <-ticker.C:
 						display.SetText(formatMs(time.Since(start).Milliseconds()))
+					}
+				}
+			}()
+
+			go func() {
+				ticker := time.NewTicker(33 * time.Millisecond)
+				defer ticker.Stop()
+				var ref cube.Quaternion
+				haveRef := false
+				for {
+					select {
+					case <-sctx.Done():
+						return
+					case <-ticker.C:
+					}
+					q := a.cube.Gyro()
+					if q == (cube.Quaternion{}) {
+						continue
+					}
+					if !haveRef {
+						ref = q
+						haveRef = true
+						continue
+					}
+					label, mag := dominantRotation(relativeEuler(ref, q))
+					if mag >= rotationThreshold {
+						ctl.mu.Lock()
+						if ctl.phase == tsSolving {
+							ctl.events = append(ctl.events, SolveEvent{T: time.Since(start).Milliseconds(), Kind: "rot", Val: label})
+						}
+						ctl.mu.Unlock()
+						ref = q
 					}
 				}
 			}()
@@ -276,16 +397,30 @@ func (a *App) showTimer() {
 			case tsReady:
 				ctl.mu.Unlock()
 				startSolve()
+			case tsSolving:
+				ctl.events = append(ctl.events, SolveEvent{T: time.Since(ctl.start).Milliseconds(), Kind: "move", Val: move})
+				ctl.mu.Unlock()
 			default:
 				ctl.mu.Unlock()
 			}
 		}
 
+		targetIdx := func() int {
+			if selected >= 0 && selected < len(solves) {
+				return len(solves) - 1 - selected
+			}
+			if len(solves) > 0 {
+				return len(solves) - 1
+			}
+			return -1
+		}
+
 		penalty := func(p string) {
-			if len(solves) == 0 {
+			i := targetIdx()
+			if i < 0 {
 				return
 			}
-			last := &solves[len(solves)-1]
+			last := &solves[i]
 			if last.Penalty == p {
 				last.Penalty = ""
 			} else {
@@ -296,11 +431,14 @@ func (a *App) showTimer() {
 			list.Refresh()
 		}
 
-		deleteLast := func() {
-			if len(solves) == 0 {
+		deleteSelected := func() {
+			i := targetIdx()
+			if i < 0 {
 				return
 			}
-			solves = solves[:len(solves)-1]
+			solves = append(solves[:i], solves[i+1:]...)
+			selected = -1
+			list.UnselectAll()
 			saveSolves(solves)
 			refreshStats()
 			list.Refresh()
@@ -313,10 +451,11 @@ func (a *App) showTimer() {
 		plus2.Importance = widget.WarningImportance
 		dnf := widget.NewButton("DNF", func() { penalty("DNF") })
 		dnf.Importance = widget.DangerImportance
-		del := widget.NewButton("Delete", deleteLast)
+		details := widget.NewButton("Details", showDetails)
+		del := widget.NewButton("Delete", deleteSelected)
 		newScr := widget.NewButton("New Scramble", resetScramble)
 		newScr.Importance = widget.HighImportance
-		controls := container.NewGridWithColumns(4, plus2, dnf, del, newScr)
+		controls := container.NewGridWithColumns(5, plus2, dnf, details, del, newScr)
 
 		header := container.NewBorder(nil, nil,
 			heading("Timer", 26), widget.NewButton("Back", a.showMenu),

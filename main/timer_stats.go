@@ -10,11 +10,38 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 const timesFile = "times.json"
 
+type SolveEvent struct {
+	T    int64  `json:"t"`
+	Kind string `json:"kind"`
+	Val  string `json:"val"`
+}
+
 type Solve struct {
-	Ms       int64  `json:"ms"`
-	Scramble string `json:"scramble"`
-	Penalty  string `json:"penalty"`
-	At       int64  `json:"at"`
+	Ms       int64        `json:"ms"`
+	Scramble string       `json:"scramble"`
+	Penalty  string       `json:"penalty"`
+	At       int64        `json:"at"`
+	Events   []SolveEvent `json:"events,omitempty"`
+}
+
+func (s Solve) moves() []string {
+	out := []string{}
+	for _, e := range s.Events {
+		if e.Kind == "move" {
+			out = append(out, e.Val)
+		}
+	}
+	return out
+}
+
+func (s Solve) rotations() []string {
+	out := []string{}
+	for _, e := range s.Events {
+		if e.Kind == "rot" {
+			out = append(out, e.Val)
+		}
+	}
+	return out
 }
 
 func (s Solve) effectiveMs() (int64, bool) {
