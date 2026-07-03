@@ -2,6 +2,7 @@ package cube
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"strconv"
@@ -25,17 +26,23 @@ var moveTable = map[int]string{
 	8: "L", 9: "L'", 10: "R", 11: "R'",
 }
 
+type Quaternion struct {
+	W, X, Y, Z float64
+}
+
 type Cube struct {
 	Type    CubeType
 	Power   int
 	OnMove  func(move string)
 	OnState func(state [18]byte, solved bool)
+	OnGyro  func(q Quaternion)
 
 	conn      *connection.Connection
 	state     [18]byte
 	stateChan chan []byte
 	powerChan chan byte
 	lastMoves [5]string
+	gyro      Quaternion
 	mu        sync.Mutex
 }
 
@@ -50,7 +57,7 @@ func New(t CubeType) *Cube {
 func (c *Cube) handleNotification(decrypted []byte) {
 	switch decrypted[0] {
 	case 0xAB:
-		return
+		c.handleGyro(decrypted)
 	case 0xA5:
 		c.handleMoves(decrypted)
 	case 0xA3:
@@ -96,6 +103,34 @@ func (c *Cube) handleMoves(decrypted []byte) {
 	if c.OnMove != nil {
 		c.OnMove(lastMove)
 	}
+}
+
+func (c *Cube) handleGyro(d []byte) {
+	if len(d) < 17 {
+		return
+	}
+	q := Quaternion{
+		W: gyroComponent(d[1:5]),
+		X: gyroComponent(d[5:9]),
+		Z: -gyroComponent(d[9:13]),
+		Y: gyroComponent(d[13:17]),
+	}
+	c.mu.Lock()
+	c.gyro = q
+	c.mu.Unlock()
+	if c.OnGyro != nil {
+		c.OnGyro(q)
+	}
+}
+
+func gyroComponent(b []byte) float64 {
+	return float64(int32(binary.LittleEndian.Uint32(b))) / float64(int64(1)<<30)
+}
+
+func (c *Cube) Gyro() Quaternion {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.gyro
 }
 
 func (c *Cube) FindAndConnect(mac string) error {
@@ -170,6 +205,16 @@ func (c *Cube) LastMoves() string {
 		res.WriteString(c.lastMoves[i] + " ")
 	}
 	return res.String()
+}
+
+func (c *Cube) LastMovesList() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]string, 0, 5)
+	for i := 4; i >= 0; i-- {
+		out = append(out, c.lastMoves[i])
+	}
+	return out
 }
 
 func trySend[T any](ch chan T, v T) {

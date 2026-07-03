@@ -5,35 +5,115 @@ import (
 	"strconv"
 	"time"
 
+	"cubie/cubestate"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 )
 
 func (a *App) showMenu() {
-	a.switchScreen(fyne.NewSize(400, 350), func(ctx context.Context) fyne.CanvasObject {
-		batteryLabel := widget.NewLabel("Battery: --%")
+	if a.cubeModel == nil {
+		a.cubeModel = cubestate.NewSolved()
+	}
+	cubeView := NewCubeView(a.cubeModel)
+	cubeView.SetMinSize(fyne.NewSize(320, 320))
+	gyroSphere := NewGyroSphere()
 
-		go a.pollBattery(ctx, batteryLabel)
+	a.hideMini = true
+	a.switchScreen(fyne.NewSize(980, 700), func(ctx context.Context) fyne.CanvasObject {
+		title := heading("CUBIE", 28)
+		subtitle := caption(a.model)
 
-		return container.NewVBox(
-			widget.NewLabel(a.model),
-			batteryLabel,
-			widget.NewSeparator(),
-			widget.NewButton("3D Cube", a.showCube3D),
-			widget.NewButton("Controller", a.showController),
-			widget.NewButton("Timer", a.showTimer),
-			widget.NewButton("Blind Trainer", a.showBlind),
-			widget.NewSeparator(),
-			widget.NewButton("Disconnect", func() {
-				a.disconnect()
-				a.showConnect()
-			}),
+		batteryText := heading("Battery --%", 15)
+		batteryPill := pill(batteryText, accentGreen)
+		go a.pollBattery(ctx, func(s string) {
+			batteryText.Text = s
+			batteryText.Refresh()
+		})
+
+		movesStrip, updateMoves := newMovesStrip()
+		a.cube.OnMove = func(string) {
+			updateMoves(a.cube.LastMovesList())
+		}
+		updateMoves(a.cube.LastMovesList())
+
+		go func() {
+			ticker := time.NewTicker(80 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					q := a.cube.Gyro()
+					gyroSphere.SetQuaternion(q)
+					cubeView.SetGyro(q)
+				}
+			}
+		}()
+
+		followCheck := widget.NewCheck("Rotate cube with gyroscope", func(b bool) {
+			cubeView.SetFollowGyro(b)
+		})
+
+		syncButton := widget.NewButton("Mark solved (sync)", func() {
+			a.setMiniSolved()
+		})
+		syncButton.Importance = widget.HighImportance
+
+		header := container.NewBorder(nil, nil,
+			container.NewVBox(title, subtitle),
+			container.NewCenter(batteryPill),
 		)
+
+		left := card(container.NewBorder(
+			nil, container.NewCenter(caption("Drag to rotate")), nil, nil,
+			cubeView,
+		))
+
+		right := card(container.NewVBox(
+			heading("Gyroscope", 18),
+			container.NewCenter(gyroSphere),
+			followCheck,
+			widget.NewSeparator(),
+			heading("Last moves", 16),
+			container.NewCenter(movesStrip),
+			layout.NewSpacer(),
+			syncButton,
+		))
+
+		grid := container.NewGridWithColumns(2, left, right)
+
+		modeTiles := container.NewGridWithColumns(3,
+			NewModeTile("Controller", "Cube as a gamepad", accentCyan, a.showController),
+			NewModeTile("Timer", "Speedcubing timer", accentGreen, a.showTimer),
+			NewModeTile("Blind", "Memo & exec timing", accentAmber, a.showBlind),
+		)
+
+		disconnect := widget.NewButton("Disconnect", func() {
+			a.disconnect()
+			a.showConnect()
+		})
+		disconnect.Importance = widget.DangerImportance
+
+		bottom := container.NewVBox(
+			container.NewPadded(modeTiles),
+			container.NewPadded(disconnect),
+		)
+
+		return container.NewPadded(container.NewBorder(
+			container.NewPadded(header),
+			bottom,
+			nil, nil,
+			grid,
+		))
 	})
+	a.miniCube = cubeView
 }
 
-func (a *App) pollBattery(ctx context.Context, label *widget.Label) {
+func (a *App) pollBattery(ctx context.Context, set func(string)) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -41,8 +121,7 @@ func (a *App) pollBattery(ctx context.Context, label *widget.Label) {
 		default:
 		}
 		a.cube.UpdatePowerInfo()
-		label.SetText("Battery: " + strconv.Itoa(a.cube.Power) + "%")
-		label.Refresh()
+		set("Battery " + strconv.Itoa(a.cube.Power) + "%")
 		select {
 		case <-ctx.Done():
 			return

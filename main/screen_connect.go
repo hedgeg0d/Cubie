@@ -11,11 +11,17 @@ import (
 )
 
 func (a *App) showConnect() {
-	a.switchScreen(fyne.NewSize(350, 300), func(context.Context) fyne.CanvasObject {
+	a.switchScreen(fyne.NewSize(520, 500), func(context.Context) fyne.CanvasObject {
+		title := heading("CUBIE", 34)
+		tagline := caption("Smart cube companion")
+
 		macEntry := widget.NewEntry()
-		macEntry.SetPlaceHolder("MAC address")
+		macEntry.SetPlaceHolder("MAC address  (AA:BB:CC:DD:EE:FF)")
 		modelRadio := widget.NewRadioGroup([]string{"Weilong V10 AI"}, func(string) {})
-		errorLabel := widget.NewLabel("")
+
+		errorText := caption("")
+		errorText.Color = errorColor
+		errorText.TextSize = 13
 
 		if config, err := loadConfig(); err == nil {
 			macEntry.SetText(config.MACAddress)
@@ -29,16 +35,33 @@ func (a *App) showConnect() {
 			}
 			c := cube.New(t)
 			if err := c.FindAndConnect(macEntry.Text); err != nil {
-				errorLabel.SetText(err.Error())
+				errorText.Text = err.Error()
+				errorText.Refresh()
 				return
 			}
+			errorText.Text = ""
+			errorText.Refresh()
 			saveConfig(Config{MACAddress: macEntry.Text, Model: modelRadio.Selected})
 			a.cube = c
 			a.model = modelRadio.Selected
+			a.setMiniSolved()
 			c.GreetCube()
 			a.showMenu()
 		})
+		connectButton.Importance = widget.HighImportance
 
-		return container.NewVBox(macEntry, modelRadio, connectButton, errorLabel)
+		form := container.NewVBox(
+			container.NewCenter(title),
+			container.NewCenter(tagline),
+			widget.NewSeparator(),
+			caption("Cube model"),
+			modelRadio,
+			caption("Bluetooth address"),
+			macEntry,
+			connectButton,
+			container.NewCenter(errorText),
+		)
+
+		return container.NewCenter(container.NewGridWrap(fyne.NewSize(410, 360), card(form)))
 	})
 }
