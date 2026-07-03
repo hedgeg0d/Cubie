@@ -237,24 +237,22 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 		displayed := cube.Quaternion{W: 1}
 		var active []bool
 		var autoNeutral *cube.Quaternion
+		btnState := map[string]bool{}
+		axisState := map[string]int32{}
 		tick := 0
 
 		release := func() {
-			s := cfg.Load()
-			if s == nil {
-				return
-			}
-			for i, tb := range s.TiltBindings {
-				if i < len(active) && active[i] && tb.Mode == "hold" {
-					c.SetButton(tb.Action, false)
-					pad.SetButton(tb.Action, false)
+			for a, down := range btnState {
+				if down {
+					c.SetButton(a, false)
+					pad.SetButton(a, false)
 				}
 			}
-			for _, ab := range s.AxisBindings {
-				if code, ok := controller.AxisCode(ab.Target); ok {
+			for t := range axisState {
+				if code, ok := controller.AxisCode(t); ok {
 					c.SetAxis(code, 0)
 				}
-				pad.SetAxis(ab.Target, 0)
+				pad.SetAxis(t, 0)
 			}
 			pad.Poke()
 		}
@@ -294,18 +292,30 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 				active = make([]bool, len(s.TiltBindings))
 			}
 
+			wantAxis := map[string]int32{}
+			for _, ab := range s.AxisBindings {
+				if _, ok := controller.AxisCode(ab.Target); !ok {
+					continue
+				}
+				wantAxis[ab.Target] = angleToAxis(eulerComponent(e, ab.Source), ab.Deadzone, ab.Range, ab.Invert)
+			}
 			c.Frame(func(w func(eventType, code, value int32)) {
-				for _, ab := range s.AxisBindings {
-					code, ok := controller.AxisCode(ab.Target)
-					if !ok {
-						continue
-					}
-					v := angleToAxis(eulerComponent(e, ab.Source), ab.Deadzone, ab.Range, ab.Invert)
+				for t, v := range wantAxis {
+					code, _ := controller.AxisCode(t)
 					w(controller.EV_ABS, int32(code), v)
-					pad.SetAxis(ab.Target, v)
+					pad.SetAxis(t, v)
+				}
+				for t := range axisState {
+					if _, still := wantAxis[t]; !still {
+						code, _ := controller.AxisCode(t)
+						w(controller.EV_ABS, int32(code), 0)
+						pad.SetAxis(t, 0)
+					}
 				}
 			})
+			axisState = wantAxis
 
+			wantBtn := map[string]bool{}
 			for i, tb := range s.TiltBindings {
 				if tb.Action == "" || tb.Action == actionNone {
 					continue
@@ -322,16 +332,26 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 					if tb.Mode == "tap" {
 						go c.Press(tb.Action, time.Duration(s.HoldMs))
 						pad.Flash(tb.Action)
-					} else {
-						c.SetButton(tb.Action, true)
-						pad.SetButton(tb.Action, true)
 					}
 				} else if active[i] && val < offT {
 					active[i] = false
-					if tb.Mode != "tap" {
-						c.SetButton(tb.Action, false)
-						pad.SetButton(tb.Action, false)
-					}
+				}
+				if tb.Mode != "tap" && active[i] {
+					wantBtn[tb.Action] = true
+				}
+			}
+			for a := range wantBtn {
+				if !btnState[a] {
+					c.SetButton(a, true)
+					pad.SetButton(a, true)
+					btnState[a] = true
+				}
+			}
+			for a, down := range btnState {
+				if down && !wantBtn[a] {
+					c.SetButton(a, false)
+					pad.SetButton(a, false)
+					btnState[a] = false
 				}
 			}
 
