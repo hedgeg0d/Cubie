@@ -44,13 +44,15 @@ type Cube struct {
 	OnState func(state [18]byte, solved bool)
 	OnGyro  func(q Quaternion)
 
-	conn      *connection.Connection
-	state     [18]byte
-	stateChan chan []byte
-	powerChan chan byte
-	lastMoves [5]string
-	gyro      Quaternion
-	mu        sync.Mutex
+	conn        *connection.Connection
+	state       [18]byte
+	stateChan   chan []byte
+	powerChan   chan byte
+	lastMoves   [5]string
+	lastCounter byte
+	movePrimed  bool
+	gyro        Quaternion
+	mu          sync.Mutex
 }
 
 func New(t CubeType) *Cube {
@@ -82,12 +84,11 @@ func (c *Cube) handleNotification(decrypted []byte) {
 	}
 }
 
-func (c *Cube) handleMoves(decrypted []byte) {
+func parseMoveHistory(decrypted []byte) [5]string {
 	bitString := ""
 	for _, b := range decrypted[12:16] {
 		bitString += fmt.Sprintf("%08b", b)
 	}
-
 	moves := [5]string{}
 	for i := range 5 {
 		start := i * 5
@@ -100,15 +101,36 @@ func (c *Cube) handleMoves(decrypted []byte) {
 			moves[i] = fmt.Sprintf("Unknown(%d)", moveCode)
 		}
 	}
+	return moves
+}
+
+func (c *Cube) handleMoves(decrypted []byte) {
+	moves := parseMoveHistory(decrypted)
+	counter := decrypted[11]
 
 	c.mu.Lock()
 	c.lastMoves = moves
+	count := 1
+	if c.movePrimed {
+		count = int(byte(counter - c.lastCounter))
+	}
+	c.lastCounter = counter
+	c.movePrimed = true
 	c.mu.Unlock()
 
-	lastMove := moves[0]
-	fmt.Println("Move made: " + lastMove)
-	if c.OnMove != nil {
-		c.OnMove(lastMove)
+	if count <= 0 {
+		return
+	}
+	if count > 5 {
+		count = 5
+	}
+
+	for i := count - 1; i >= 0; i-- {
+		move := moves[i]
+		fmt.Println("Move made: " + move)
+		if c.OnMove != nil {
+			c.OnMove(move)
+		}
 	}
 }
 
@@ -144,6 +166,9 @@ func (c *Cube) FindAndConnect(mac string) error {
 	if c.Type != WeilongV10AI {
 		return fmt.Errorf("unsupported cube type %d", c.Type)
 	}
+	c.mu.Lock()
+	c.movePrimed = false
+	c.mu.Unlock()
 	conn, err := connection.Setup(mac, int(c.Type), c.handleNotification)
 	if err != nil {
 		log.Println("Failed to connect to ", c.Type, " with address ", mac)

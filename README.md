@@ -9,7 +9,7 @@ Modes:
 - **Timer** — speedcubing timer with scramble generation (including double turns like `U2`) and ao5/ao12 stats. Double turns can be executed either direction — after the first quarter the guidance shows the single turn (`U` or `U'`) needed to finish. Select a solve in the list to apply +2/DNF, delete it, or open **Details** (also via double-click) showing the scramble, TPS, and two reconstructions: **as performed** — moves interleaved with the cube rotations (x/y/z) at the point they happened, with subsequent moves re-expressed in the solver's frame — and **rotation-agnostic** — the raw move sequence in the cube's fixed frame. Cube rotations are inferred from the gyroscope during the solve, so their axis/direction is approximate.
 - **Blind trainer** — memo/execution timing trainer for blindfold solving.
 
-The 3D view tracks state by applying moves from the last sync point (a solved cube), so sync once before use.
+The 3D view tracks state by applying moves from the last sync point (a solved cube), so sync once before use. Move packets carry a counter and the last five moves, so dropped or duplicated Bluetooth notifications are recovered from the history instead of desyncing the model by a quarter turn.
 
 ## Requirements
 
