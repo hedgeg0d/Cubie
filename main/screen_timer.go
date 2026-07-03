@@ -28,6 +28,24 @@ func fallback(s, alt string) string {
 	return s
 }
 
+func reconstruct(events []SolveEvent) (withRot, agnostic string, nMoves, nRot int) {
+	o := cubestate.NewOrientation()
+	var a, b []string
+	for _, e := range events {
+		switch e.Kind {
+		case "rot":
+			a = append(a, e.Val)
+			o.Apply(e.Val)
+			nRot++
+		case "move":
+			a = append(a, o.Remap(e.Val))
+			b = append(b, e.Val)
+			nMoves++
+		}
+	}
+	return strings.Join(a, " "), strings.Join(b, " "), nMoves, nRot
+}
+
 func dominantRotation(e Euler) (string, float64) {
 	ax, ay, az := math.Abs(e.Pitch), math.Abs(e.Roll), math.Abs(e.Yaw)
 	switch {
@@ -170,26 +188,31 @@ func (a *App) showTimer() {
 				return
 			}
 			s := solves[len(solves)-1-selected]
-			mv := s.moves()
-			rot := s.rotations()
+			withRot, agnostic, nMoves, nRot := reconstruct(s.Events)
 			tps := ""
-			if s.Ms > 0 && len(mv) > 0 {
-				tps = "  ·  " + strconv.FormatFloat(float64(len(mv))/(float64(s.Ms)/1000), 'f', 2, 64) + " tps"
+			if s.Ms > 0 && nMoves > 0 {
+				tps = "  ·  " + strconv.FormatFloat(float64(nMoves)/(float64(s.Ms)/1000), 'f', 2, 64) + " tps"
 			}
 			penalty := s.Penalty
 			if penalty == "" {
 				penalty = "none"
 			}
+			solLabel := widget.NewLabel(fallback(withRot, "not recorded"))
+			solLabel.Wrapping = fyne.TextWrapWord
+			agLabel := widget.NewLabel(fallback(agnostic, "not recorded"))
+			agLabel.Wrapping = fyne.TextWrapWord
+			scrLabel := widget.NewLabel(s.Scramble)
+			scrLabel.Wrapping = fyne.TextWrapWord
 			rows := container.NewVBox(
 				heading(formatMs(s.Ms)+tps, 22),
 				caption(time.Unix(s.At, 0).Format("2006-01-02 15:04")+"   ·   penalty: "+penalty),
 				widget.NewSeparator(),
 				caption("Scramble"),
-				widget.NewLabel(s.Scramble),
-				caption("Moves ("+itoa(len(mv))+")"),
-				widget.NewLabel(fallback(strings.Join(mv, " "), "not recorded")),
-				caption("Rotations ("+itoa(len(rot))+")"),
-				widget.NewLabel(fallback(strings.Join(rot, " "), "none")),
+				scrLabel,
+				caption("Solution — as performed ("+itoa(nMoves)+" moves, "+itoa(nRot)+" rotations)"),
+				solLabel,
+				caption("Solution — rotation-agnostic"),
+				agLabel,
 			)
 			d := dialog.NewCustom("Solve details", "Close", container.NewVScroll(rows), a.window)
 			d.Resize(fyne.NewSize(520, 460))
