@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"cubie/cube"
 	"cubie/cubestate"
 
 	"fyne.io/fyne/v2"
@@ -40,16 +41,21 @@ func (a *App) showMenu() {
 		updateMoves(a.cube.LastMovesList())
 
 		go func() {
-			ticker := time.NewTicker(80 * time.Millisecond)
+			ticker := time.NewTicker(33 * time.Millisecond)
 			defer ticker.Stop()
+			displayed := cube.Quaternion{W: 1}
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					q := a.cube.Gyro()
-					gyroSphere.SetQuaternion(q)
-					cubeView.SetGyro(q)
+					target := a.cube.Gyro()
+					if target == (cube.Quaternion{}) {
+						continue
+					}
+					displayed = quatNlerp(displayed, target, 0.3)
+					gyroSphere.SetQuaternion(displayed)
+					cubeView.SetGyro(displayed)
 				}
 			}
 		}()

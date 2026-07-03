@@ -95,6 +95,32 @@ func (m *Model) turn(axis int, sign float64, dir int) {
 	}
 }
 
+func OnLayer(p Vec3, axis int, sign float64) bool {
+	return onLayer(p, axis, sign)
+}
+
+func MoveInfo(move string) (axis int, sign float64, dir, quarters int, ok bool) {
+	if move == "" {
+		return 0, 0, 0, 0, false
+	}
+	f, found := faceSpecs[move[:1]]
+	if !found {
+		return 0, 0, 0, 0, false
+	}
+	dir = f.dir
+	quarters = 1
+	switch move[1:] {
+	case "":
+	case "'":
+		dir = -f.dir
+	case "2":
+		quarters = 2
+	default:
+		return 0, 0, 0, 0, false
+	}
+	return f.axis, f.sign, dir, quarters, true
+}
+
 func onLayer(p Vec3, axis int, sign float64) bool {
 	var comp float64
 	switch axis {

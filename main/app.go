@@ -83,9 +83,10 @@ func (a *App) applyMiniMove(move string) {
 	if a.cubeModel == nil {
 		a.cubeModel = cubestate.NewSolved()
 	}
-	a.cubeModel.Apply(move)
 	if a.miniCube != nil {
-		a.miniCube.SetModel(a.cubeModel)
+		a.miniCube.ApplyMove(move)
+	} else {
+		a.cubeModel.Apply(move)
 	}
 }
 

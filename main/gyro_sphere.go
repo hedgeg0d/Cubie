@@ -86,6 +86,24 @@ func (r *gyroSphereRenderer) Refresh() {
 	canvas.Refresh(r.img)
 }
 
+func quatNlerp(a, b cube.Quaternion, t float64) cube.Quaternion {
+	dot := a.W*b.W + a.X*b.X + a.Y*b.Y + a.Z*b.Z
+	if dot < 0 {
+		b = cube.Quaternion{W: -b.W, X: -b.X, Y: -b.Y, Z: -b.Z}
+	}
+	r := cube.Quaternion{
+		W: a.W + (b.W-a.W)*t,
+		X: a.X + (b.X-a.X)*t,
+		Y: a.Y + (b.Y-a.Y)*t,
+		Z: a.Z + (b.Z-a.Z)*t,
+	}
+	n := math.Sqrt(r.W*r.W + r.X*r.X + r.Y*r.Y + r.Z*r.Z)
+	if n < 1e-6 {
+		return cube.Quaternion{W: 1}
+	}
+	return cube.Quaternion{W: r.W / n, X: r.X / n, Y: r.Y / n, Z: r.Z / n}
+}
+
 func rotateByQuat(q cube.Quaternion, vx, vy, vz float64) (float64, float64, float64) {
 	tx := 2 * (q.Y*vz - q.Z*vy)
 	ty := 2 * (q.Z*vx - q.X*vz)

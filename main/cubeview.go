@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"time"
 
 	"cubie/cube"
 	"cubie/cubestate"
@@ -35,12 +36,98 @@ type CubeView struct {
 	renderPx    int
 	followGyro  bool
 	gyroQuat    cube.Quaternion
+	anim        animState
+	moveQueue   chan string
+	stopCh      chan struct{}
+	stopOnce    sync.Once
+}
+
+type animState struct {
+	active bool
+	axis   int
+	sign   float64
+	alpha  float64
 }
 
 func NewCubeView(model *cubestate.Model) *CubeView {
-	c := &CubeView{model: model, yaw: 0.7, pitch: 0.5, interactive: true, minSize: fyne.NewSize(300, 300), renderPx: 400}
+	c := &CubeView{
+		model:       model,
+		yaw:         0.7,
+		pitch:       0.5,
+		interactive: true,
+		minSize:     fyne.NewSize(300, 300),
+		renderPx:    400,
+		moveQueue:   make(chan string, 64),
+		stopCh:      make(chan struct{}),
+	}
 	c.ExtendBaseWidget(c)
+	go c.animator()
 	return c
+}
+
+func (c *CubeView) animator() {
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		case move := <-c.moveQueue:
+			c.animateMove(move)
+		}
+	}
+}
+
+func (c *CubeView) animateMove(move string) {
+	axis, sign, dir, quarters, ok := cubestate.MoveInfo(move)
+	if !ok {
+		c.commitMove(move)
+		return
+	}
+	total := float64(dir) * float64(quarters) * math.Pi / 2
+	dur := 110 * time.Millisecond
+	if len(c.moveQueue) > 1 {
+		dur = 45 * time.Millisecond
+	}
+	start := time.Now()
+	for {
+		t := float64(time.Since(start)) / float64(dur)
+		if t >= 1 {
+			break
+		}
+		e := t * t * (3 - 2*t)
+		c.mu.Lock()
+		c.anim = animState{active: true, axis: axis, sign: sign, alpha: total * e}
+		c.mu.Unlock()
+		c.Refresh()
+		time.Sleep(16 * time.Millisecond)
+	}
+	c.commitMove(move)
+}
+
+func (c *CubeView) commitMove(move string) {
+	c.mu.Lock()
+	c.anim.active = false
+	if c.model != nil {
+		c.model.Apply(move)
+	}
+	c.mu.Unlock()
+	c.Refresh()
+}
+
+func (c *CubeView) stop() {
+	c.stopOnce.Do(func() { close(c.stopCh) })
+}
+
+func rotateAxisAngle(v cubestate.Vec3, axis int, alpha float64) cubestate.Vec3 {
+	s, cs := math.Sin(alpha), math.Cos(alpha)
+	switch axis {
+	case 0:
+		return cubestate.Vec3{X: v.X, Y: v.Y*cs - v.Z*s, Z: v.Y*s + v.Z*cs}
+	case 1:
+		return cubestate.Vec3{X: v.X*cs + v.Z*s, Y: v.Y, Z: -v.X*s + v.Z*cs}
+	case 2:
+		return cubestate.Vec3{X: v.X*cs - v.Y*s, Y: v.X*s + v.Y*cs, Z: v.Z}
+	}
+	return v
 }
 
 func (c *CubeView) SetMinSize(size fyne.Size) {
@@ -57,8 +144,17 @@ func (c *CubeView) DisableInteraction() {
 }
 
 func (c *CubeView) SetModel(model *cubestate.Model) {
+drain:
+	for {
+		select {
+		case <-c.moveQueue:
+		default:
+			break drain
+		}
+	}
 	c.mu.Lock()
 	c.model = model
+	c.anim.active = false
 	c.mu.Unlock()
 	c.Refresh()
 }
@@ -81,12 +177,11 @@ func (c *CubeView) SetGyro(q cube.Quaternion) {
 }
 
 func (c *CubeView) ApplyMove(move string) {
-	c.mu.Lock()
-	if c.model != nil {
-		c.model.Apply(move)
+	select {
+	case c.moveQueue <- move:
+	default:
+		c.commitMove(move)
 	}
-	c.mu.Unlock()
-	c.Refresh()
 }
 
 func (c *CubeView) Dragged(e *fyne.DragEvent) {
@@ -146,7 +241,7 @@ func (r *cubeViewRenderer) MinSize() fyne.Size {
 	return size
 }
 func (r *cubeViewRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.img} }
-func (r *cubeViewRenderer) Destroy()                     {}
+func (r *cubeViewRenderer) Destroy()                     { r.c.stop() }
 
 func (r *cubeViewRenderer) Refresh() {
 	r.img.Image = r.c.render()
@@ -160,6 +255,7 @@ func (c *CubeView) render() image.Image {
 	size := c.renderPx
 	follow := c.followGyro
 	gq := c.gyroQuat
+	anim := c.anim
 	c.mu.Unlock()
 	if size < 16 {
 		size = 16
@@ -200,8 +296,16 @@ func (c *CubeView) render() image.Image {
 	var quads []quad
 
 	for _, st := range model.Stickers {
+		member := anim.active && cubestate.OnLayer(st.Pos, anim.axis, anim.sign)
+		tf := func(v cubestate.Vec3) cubestate.Vec3 {
+			if member {
+				v = rotateAxisAngle(v, anim.axis, anim.alpha)
+			}
+			return rot(v)
+		}
+
 		n := stickerNormal(st.Pos)
-		nv := rot(n)
+		nv := tf(n)
 		if nv.Z <= 0 {
 			continue
 		}
@@ -216,7 +320,7 @@ func (c *CubeView) render() image.Image {
 		var pts [4][2]float64
 		var dsum float64
 		for k, corner := range corners {
-			v := rot(corner)
+			v := tf(corner)
 			pts[k] = [2]float64{center + scale*v.X, center - scale*v.Y}
 			dsum += v.Z
 		}
