@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"cubie/cube"
 
@@ -27,6 +29,51 @@ func (a *App) showConnect() {
 			macEntry.SetText(config.MACAddress)
 			modelRadio.SetSelected(config.Model)
 		}
+
+		var scanResults []cube.ScanResult
+		resultList := widget.NewList(
+			func() int { return len(scanResults) },
+			func() fyne.CanvasObject { return widget.NewLabel("") },
+			func(i widget.ListItemID, o fyne.CanvasObject) {
+				r := scanResults[i]
+				o.(*widget.Label).SetText(r.Name + "  ·  " + r.Address + "  (" + strconv.Itoa(int(r.RSSI)) + " dBm)")
+			},
+		)
+		resultList.OnSelected = func(i widget.ListItemID) {
+			if i >= 0 && i < len(scanResults) {
+				macEntry.SetText(scanResults[i].Address)
+			}
+		}
+		listBox := container.NewGridWrap(fyne.NewSize(410, 130), resultList)
+		listBox.Hide()
+
+		var scanButton *widget.Button
+		scanButton = widget.NewButton("Scan for cubes", func() {
+			scanButton.Disable()
+			scanButton.SetText("Scanning...")
+			errorText.Text = ""
+			errorText.Refresh()
+			go func() {
+				results, err := cube.Scan(4 * time.Second)
+				scanButton.Enable()
+				scanButton.SetText("Scan for cubes")
+				if err != nil {
+					errorText.Text = err.Error()
+					errorText.Refresh()
+					return
+				}
+				scanResults = results
+				resultList.UnselectAll()
+				resultList.Refresh()
+				if len(results) == 0 {
+					errorText.Text = "No Bluetooth devices found"
+					errorText.Refresh()
+					listBox.Hide()
+				} else {
+					listBox.Show()
+				}
+			}()
+		})
 
 		connectButton := widget.NewButton("Connect", func() {
 			var t cube.CubeType
@@ -58,10 +105,12 @@ func (a *App) showConnect() {
 			modelRadio,
 			caption("Bluetooth address"),
 			macEntry,
+			scanButton,
+			listBox,
 			connectButton,
 			container.NewCenter(errorText),
 		)
 
-		return container.NewCenter(container.NewGridWrap(fyne.NewSize(410, 360), card(form)))
+		return container.NewCenter(container.NewGridWrap(fyne.NewSize(430, 500), card(form)))
 	})
 }

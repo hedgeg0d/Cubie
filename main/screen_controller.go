@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -11,12 +12,14 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
 var controllerMoves = []string{"R", "R'", "L", "L'", "U", "U'", "D", "D'", "F", "F'", "B", "B'"}
 
 const controllerSettingsFile = "controller.json"
+const controllerProfilesFile = "controller_profiles.json"
 const actionNone = "(none)"
 
 var gyroSources = []string{"Pitch", "Roll", "Yaw"}
@@ -49,9 +52,7 @@ type ControllerSettings struct {
 	Neutral       *cube.Quaternion  `json:"neutral,omitempty"`
 }
 
-func loadControllerSettings() ControllerSettings {
-	s := ControllerSettings{Bindings: map[string]string{}, HoldMs: 50}
-	readJSON(controllerSettingsFile, &s)
+func normalizeSettings(s ControllerSettings) ControllerSettings {
 	if s.Bindings == nil {
 		s.Bindings = map[string]string{}
 	}
@@ -65,6 +66,48 @@ func loadControllerSettings() ControllerSettings {
 		s.Smoothing = 0.35
 	}
 	return s
+}
+
+func loadControllerSettings() ControllerSettings {
+	s := ControllerSettings{}
+	readJSON(controllerSettingsFile, &s)
+	return normalizeSettings(s)
+}
+
+type ControllerProfiles struct {
+	Active   string                        `json:"active"`
+	Profiles map[string]ControllerSettings `json:"profiles"`
+}
+
+func loadControllerProfiles() ControllerProfiles {
+	p := ControllerProfiles{Profiles: map[string]ControllerSettings{}}
+	readJSON(controllerProfilesFile, &p)
+	if p.Profiles == nil {
+		p.Profiles = map[string]ControllerSettings{}
+	}
+	if len(p.Profiles) == 0 {
+		p.Profiles["Default"] = loadControllerSettings()
+		p.Active = "Default"
+	}
+	for name, s := range p.Profiles {
+		p.Profiles[name] = normalizeSettings(s)
+	}
+	if _, ok := p.Profiles[p.Active]; !ok {
+		for name := range p.Profiles {
+			p.Active = name
+			break
+		}
+	}
+	return p
+}
+
+func (p ControllerProfiles) names() []string {
+	out := make([]string, 0, len(p.Profiles))
+	for k := range p.Profiles {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s ControllerSettings) snapshot() ControllerSettings {
@@ -98,13 +141,21 @@ func (a *App) showController() {
 			c.Close()
 		}()
 
-		settings := loadControllerSettings()
+		profiles := loadControllerProfiles()
+		active := profiles.Active
+		settings := profiles.Profiles[active]
+
 		var cfg atomic.Pointer[ControllerSettings]
 		publish := func() {
 			snap := settings.snapshot()
 			cfg.Store(&snap)
 		}
 		publish()
+
+		persist := func() {
+			profiles.Profiles[active] = settings
+			writeJSON(controllerProfilesFile, profiles)
+		}
 
 		pad := NewGamepadView()
 
@@ -129,10 +180,55 @@ func (a *App) showController() {
 
 		a.runGyroController(ctx, c, &cfg, sphere, preview, pad)
 
-		save := widget.NewButton("Save", func() {
-			writeJSON(controllerSettingsFile, settings)
-		})
+		save := widget.NewButton("Save", persist)
 		save.Importance = widget.HighImportance
+
+		profileSel := widget.NewSelect(profiles.names(), func(name string) {
+			if name == active {
+				return
+			}
+			persist()
+			profiles.Active = name
+			writeJSON(controllerProfilesFile, profiles)
+			a.showController()
+		})
+		profileSel.Selected = active
+
+		newBtn := widget.NewButton("New", func() {
+			nameEntry := widget.NewEntry()
+			nameEntry.SetPlaceHolder("Profile name")
+			dialog.ShowForm("New profile", "Create", "Cancel",
+				[]*widget.FormItem{widget.NewFormItem("Name", nameEntry)},
+				func(ok bool) {
+					name := nameEntry.Text
+					if !ok || name == "" {
+						return
+					}
+					persist()
+					profiles.Profiles[name] = normalizeSettings(ControllerSettings{})
+					profiles.Active = name
+					writeJSON(controllerProfilesFile, profiles)
+					a.showController()
+				}, a.window)
+		})
+		delBtn := widget.NewButton("Delete", func() {
+			if len(profiles.Profiles) <= 1 {
+				return
+			}
+			delete(profiles.Profiles, active)
+			for name := range profiles.Profiles {
+				profiles.Active = name
+				break
+			}
+			writeJSON(controllerProfilesFile, profiles)
+			a.showController()
+		})
+		delBtn.Importance = widget.DangerImportance
+
+		header := container.NewBorder(nil, nil,
+			heading("Controller builder", 24),
+			container.NewHBox(caption("Profile"), profileSel, newBtn, delBtn),
+		)
 
 		bottom := container.NewVBox(
 			card(container.NewVBox(caption("Input monitor"), container.NewCenter(pad))),
@@ -140,7 +236,7 @@ func (a *App) showController() {
 		)
 
 		return container.NewBorder(
-			container.NewPadded(heading("Controller builder", 24)),
+			container.NewPadded(header),
 			bottom,
 			nil, nil,
 			tabs,

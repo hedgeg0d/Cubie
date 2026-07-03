@@ -4,12 +4,59 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
+	"sync"
 	"time"
 
 	"cubie/encrypter"
 
 	"tinygo.org/x/bluetooth"
 )
+
+type ScanResult struct {
+	Address string
+	Name    string
+	RSSI    int16
+}
+
+func Scan(timeout time.Duration) ([]ScanResult, error) {
+	adapter := bluetooth.DefaultAdapter
+	if err := adapter.Enable(); err != nil {
+		log.Printf("Error turning on the bluetooth adapter: %s", err)
+		return nil, err
+	}
+
+	var mu sync.Mutex
+	found := map[string]ScanResult{}
+
+	go func() {
+		time.Sleep(timeout)
+		adapter.StopScan()
+	}()
+
+	err := adapter.Scan(func(a *bluetooth.Adapter, r bluetooth.ScanResult) {
+		name := r.LocalName()
+		if name == "" {
+			return
+		}
+		mu.Lock()
+		found[r.Address.String()] = ScanResult{Address: r.Address.String(), Name: name, RSSI: r.RSSI}
+		mu.Unlock()
+	})
+	if err != nil {
+		log.Printf("Error: Scan failed: %s", err)
+		return nil, err
+	}
+
+	mu.Lock()
+	out := make([]ScanResult, 0, len(found))
+	for _, r := range found {
+		out = append(out, r)
+	}
+	mu.Unlock()
+	sort.Slice(out, func(i, j int) bool { return out[i].RSSI > out[j].RSSI })
+	return out, nil
+}
 
 const (
 	WEILONG_SERVICE_UUID = "0783b03e-7735-b5a0-1760-a305d2795cb0"

@@ -24,11 +24,13 @@ go build ./...
 go run ./main
 ```
 
-On first launch enter your cube's Bluetooth MAC address and pick the model, then Connect.
+On first launch pick the model and connect. You can either **Scan for cubes** (lists nearby named Bluetooth devices, strongest signal first — tap one to fill its address) or type the Bluetooth MAC address directly, then Connect.
 
 Controller mode needs access to `/dev/uinput`. Either run with sufficient privileges or add a udev rule granting your user access.
 
 ### Controller builder
+
+Bindings are grouped into named **profiles** (selector in the top-right, with New/Delete). Switch profiles to keep separate layouts per game; the active profile and all profiles are saved to `controller_profiles.json`.
 
 The Controller screen is organised into tabs:
 
@@ -39,7 +41,7 @@ The Controller screen is organised into tabs:
 
 A live input monitor (a gamepad graphic) sits below the tabs on every tab: buttons glow when triggered, and the sticks and triggers move with the bound axes, so you can watch exactly what fires while tuning thresholds and calibrating.
 
-The gyroscope reports absolute orientation, so tilts are measured relative to a calibrated neutral pose. Hold the cube in your rest position and press **Calibrate neutral** first; the neutral is saved with the rest of the bindings. Press **Save** to persist everything to `controller.json`.
+The gyroscope reports absolute orientation, so tilts are measured relative to a calibrated neutral pose. Hold the cube in your rest position and press **Calibrate neutral** first; the neutral is saved with the rest of the bindings. Press **Save** to persist everything to `controller_profiles.json`.
 
 ## Protocol
 

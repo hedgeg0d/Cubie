@@ -8,9 +8,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"cubie/connection"
 )
+
+type ScanResult = connection.ScanResult
+
+func Scan(timeout time.Duration) ([]ScanResult, error) {
+	return connection.Scan(timeout)
+}
 
 type CubeType int
 
