@@ -236,6 +236,7 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 		defer ticker.Stop()
 		displayed := cube.Quaternion{W: 1}
 		var active []bool
+		var autoNeutral *cube.Quaternion
 		tick := 0
 
 		release := func() {
@@ -279,6 +280,13 @@ func (a *App) runGyroController(ctx context.Context, c *controller.Controller, c
 			neutral := cube.Quaternion{W: 1}
 			if s.Neutral != nil {
 				neutral = *s.Neutral
+				autoNeutral = nil
+			} else {
+				if autoNeutral == nil {
+					q := target
+					autoNeutral = &q
+				}
+				neutral = *autoNeutral
 			}
 			e := relativeEuler(neutral, displayed)
 

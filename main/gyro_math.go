@@ -31,23 +31,23 @@ func quatMul(a, b cube.Quaternion) cube.Quaternion {
 	}
 }
 
-func quatToEuler(q cube.Quaternion) Euler {
+func rotationVector(q cube.Quaternion) Euler {
 	const rad2deg = 180 / math.Pi
-	roll := math.Atan2(2*(q.W*q.X+q.Y*q.Z), 1-2*(q.X*q.X+q.Y*q.Y))
-	sinp := 2 * (q.W*q.Y - q.Z*q.X)
-	var pitch float64
-	if math.Abs(sinp) >= 1 {
-		pitch = math.Copysign(math.Pi/2, sinp)
-	} else {
-		pitch = math.Asin(sinp)
+	s := math.Sqrt(q.X*q.X + q.Y*q.Y + q.Z*q.Z)
+	if s < 1e-9 {
+		return Euler{Pitch: 2 * q.X * rad2deg, Roll: 2 * q.Y * rad2deg, Yaw: 2 * q.Z * rad2deg}
 	}
-	yaw := math.Atan2(2*(q.W*q.Z+q.X*q.Y), 1-2*(q.Y*q.Y+q.Z*q.Z))
-	return Euler{Pitch: pitch * rad2deg, Roll: roll * rad2deg, Yaw: yaw * rad2deg}
+	angle := 2 * math.Atan2(s, q.W)
+	k := angle / s * rad2deg
+	return Euler{Pitch: q.X * k, Roll: q.Y * k, Yaw: q.Z * k}
 }
 
 func relativeEuler(neutral, current cube.Quaternion) Euler {
 	rel := quatNormalize(quatMul(quatConj(neutral), current))
-	return quatToEuler(rel)
+	if rel.W < 0 {
+		rel = cube.Quaternion{W: -rel.W, X: -rel.X, Y: -rel.Y, Z: -rel.Z}
+	}
+	return rotationVector(rel)
 }
 
 func angleToAxis(angle, deadzone, rangeDeg float64, invert bool) int32 {

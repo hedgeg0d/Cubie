@@ -33,6 +33,19 @@ func TestRelativeEulerIdentity(t *testing.T) {
 	}
 }
 
+func TestRelativeEulerDecoupled(t *testing.T) {
+	neutral := cube.Quaternion{W: 1}
+	half := 60 * math.Pi / 180
+	aboutX := cube.Quaternion{W: math.Cos(half), X: math.Sin(half)}
+	e := relativeEuler(neutral, aboutX)
+	if math.Abs(e.Pitch-120) > 0.5 {
+		t.Fatalf("about-X rotation should map to pitch ~120, got %+v", e)
+	}
+	if math.Abs(e.Roll) > 0.5 || math.Abs(e.Yaw) > 0.5 {
+		t.Fatalf("about-X rotation must not leak into roll/yaw, got %+v", e)
+	}
+}
+
 func TestRelativeEulerYaw(t *testing.T) {
 	neutral := cube.Quaternion{W: 1}
 	half := 20 * math.Pi / 180
