@@ -37,6 +37,8 @@ The Controller screen is organised into tabs:
 - **Gyro axes** — map a rotation angle onto an analog target (Left/Right stick X/Y, LT, RT). Each binding has a deadzone (center dead band, degrees), a range (angle mapped to full deflection), and an invert toggle.
 - **Live** — a live orientation sphere, current Pitch/Roll/Yaw and axis outputs, smoothing/release-factor sliders, and a **Calibrate neutral** button.
 
+A live input monitor (a gamepad graphic) sits below the tabs on every tab: buttons glow when triggered, and the sticks and triggers move with the bound axes, so you can watch exactly what fires while tuning thresholds and calibrating.
+
 The gyroscope reports absolute orientation, so tilts are measured relative to a calibrated neutral pose. Hold the cube in your rest position and press **Calibrate neutral** first; the neutral is saved with the rest of the bindings. Press **Save** to persist everything to `controller.json`.
 
 ## Protocol
