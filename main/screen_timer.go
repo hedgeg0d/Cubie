@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"image/color"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"cubie/cube"
 	"cubie/cubestate"
 
 	"fyne.io/fyne/v2"
@@ -18,8 +16,6 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
-
-const rotationThreshold = 70.0
 
 func fallback(s, alt string) string {
 	if s == "" {
@@ -44,27 +40,6 @@ func reconstruct(events []SolveEvent) (withRot, agnostic string, nMoves, nRot in
 		}
 	}
 	return strings.Join(a, " "), strings.Join(b, " "), nMoves, nRot
-}
-
-func dominantRotation(e Euler) (string, float64) {
-	ax, ay, az := math.Abs(e.Pitch), math.Abs(e.Roll), math.Abs(e.Yaw)
-	switch {
-	case ax >= ay && ax >= az:
-		if e.Pitch >= 0 {
-			return "x", ax
-		}
-		return "x'", ax
-	case ay >= az:
-		if e.Roll >= 0 {
-			return "y", ay
-		}
-		return "y'", ay
-	default:
-		if e.Yaw >= 0 {
-			return "z", az
-		}
-		return "z'", az
-	}
 }
 
 const (
@@ -348,32 +323,23 @@ func (a *App) showTimer() {
 			go func() {
 				ticker := time.NewTicker(33 * time.Millisecond)
 				defer ticker.Stop()
-				var ref cube.Quaternion
-				haveRef := false
+				var det rotationDetector
 				for {
 					select {
 					case <-sctx.Done():
 						return
 					case <-ticker.C:
 					}
-					q := a.cube.Gyro()
-					if q == (cube.Quaternion{}) {
+					t := time.Since(start).Milliseconds()
+					label, ok := det.feed(t, a.cube.Gyro())
+					if !ok {
 						continue
 					}
-					if !haveRef {
-						ref = q
-						haveRef = true
-						continue
+					ctl.mu.Lock()
+					if ctl.phase == tsSolving {
+						ctl.events = append(ctl.events, SolveEvent{T: t, Kind: "rot", Val: label})
 					}
-					label, mag := dominantRotation(relativeEuler(ref, q))
-					if mag >= rotationThreshold {
-						ctl.mu.Lock()
-						if ctl.phase == tsSolving {
-							ctl.events = append(ctl.events, SolveEvent{T: time.Since(start).Milliseconds(), Kind: "rot", Val: label})
-						}
-						ctl.mu.Unlock()
-						ref = q
-					}
+					ctl.mu.Unlock()
 				}
 			}()
 

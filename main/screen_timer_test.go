@@ -55,18 +55,6 @@ func TestScrambleStepDoubleWrongThenUndo(t *testing.T) {
 	}
 }
 
-func TestDominantRotation(t *testing.T) {
-	if l, _ := dominantRotation(Euler{Pitch: 88, Roll: 3, Yaw: -5}); l != "x" {
-		t.Fatalf("want x got %s", l)
-	}
-	if l, _ := dominantRotation(Euler{Pitch: -2, Roll: -90, Yaw: 4}); l != "y'" {
-		t.Fatalf("want y' got %s", l)
-	}
-	if l, _ := dominantRotation(Euler{Pitch: 10, Roll: -8, Yaw: 95}); l != "z" {
-		t.Fatalf("want z got %s", l)
-	}
-}
-
 func TestSolveEventSplit(t *testing.T) {
 	s := Solve{Events: []SolveEvent{
 		{T: 100, Kind: "move", Val: "R"},
