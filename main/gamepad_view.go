@@ -187,8 +187,19 @@ func (g *GamepadView) render() image.Image {
 		fillRoundRect(img, image.Rect(int(px(x0)), int(py(y0)), int(px(x1)), int(py(y1))), int(4*sx), lit(a, on))
 	}
 
-	rrect("LT", 36, 10, 96, 24, padAccent)
-	rrect("RT", 324, 10, 384, 24, padAccent)
+	trig := func(name string, x0, y0, x1, y1 float64) {
+		frac := math.Abs(axis(name))
+		if frac > 1 {
+			frac = 1
+		}
+		fillRoundRect(img, image.Rect(int(px(x0)), int(py(y0)), int(px(x1)), int(py(y1))), int(4*sx), padBase)
+		if frac > 0 {
+			fillRoundRect(img, image.Rect(int(px(x0)), int(py(y0)), int(px(x0+(x1-x0)*frac)), int(py(y1))), int(4*sx), padKnob)
+		}
+	}
+
+	trig("LT", 36, 10, 96, 24)
+	trig("RT", 324, 10, 384, 24)
 	rrect("LB", 36, 30, 96, 46, padAccent)
 	rrect("RB", 324, 30, 384, 46, padAccent)
 
