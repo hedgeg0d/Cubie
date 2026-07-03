@@ -41,6 +41,12 @@ func (g *GyroSphere) SetQuaternion(q cube.Quaternion) {
 	g.Refresh()
 }
 
+func (g *GyroSphere) Quaternion() cube.Quaternion {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.q
+}
+
 func (g *GyroSphere) CreateRenderer() fyne.WidgetRenderer {
 	img := canvas.NewImageFromImage(g.render())
 	img.FillMode = canvas.ImageFillContain

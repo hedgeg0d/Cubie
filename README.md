@@ -5,7 +5,7 @@ Desktop app for Bluetooth smart Rubik's cubes. Currently supports the **Weilong 
 Modes:
 
 - **3D Cube** — live software-rendered cube, drag with the mouse to rotate. Reflects the physical cube's turns. Press "Cube is solved (sync)" while the cube is solved to align the model.
-- **Controller** — use the cube as a virtual gamepad (Linux `uinput`).
+- **Controller** — use the cube as a virtual gamepad (Linux `uinput`). Bind face turns to buttons, and bind the gyroscope to buttons (tilt gestures) or analog axes.
 - **Timer** — speedcubing timer with scramble generation and ao5/ao12 stats.
 - **Blind trainer** — memo/execution timing trainer for blindfold solving.
 
@@ -27,6 +27,17 @@ go run ./main
 On first launch enter your cube's Bluetooth MAC address and pick the model, then Connect.
 
 Controller mode needs access to `/dev/uinput`. Either run with sufficient privileges or add a udev rule granting your user access.
+
+### Controller builder
+
+The Controller screen is organised into tabs:
+
+- **Buttons** — map each of the 12 face turns to a gamepad button, and set the tap hold time.
+- **Gyro tilts** — bind tilt gestures to buttons. Each binding picks an axis (Pitch/Roll/Yaw), a direction, a target button, a mode, and an activation threshold in degrees. *Hold* keeps the button pressed while the cube is tilted past the threshold; *Tap* fires a single press when the threshold is crossed. A release factor adds hysteresis so buttons don't chatter near the threshold.
+- **Gyro axes** — map a rotation angle onto an analog target (Left/Right stick X/Y, LT, RT). Each binding has a deadzone (center dead band, degrees), a range (angle mapped to full deflection), and an invert toggle.
+- **Live** — a live orientation sphere, current Pitch/Roll/Yaw and axis outputs, smoothing/release-factor sliders, and a **Calibrate neutral** button.
+
+The gyroscope reports absolute orientation, so tilts are measured relative to a calibrated neutral pose. Hold the cube in your rest position and press **Calibrate neutral** first; the neutral is saved with the rest of the bindings. Press **Save** to persist everything to `controller.json`.
 
 ## Protocol
 

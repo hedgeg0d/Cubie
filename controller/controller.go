@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"log"
 	"os"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -15,6 +16,7 @@ import (
 
 type Controller struct {
 	uinputFile *os.File
+	mu         sync.Mutex
 }
 
 type input_event struct {
@@ -50,6 +52,10 @@ const (
 
 	ABS_X          = 0x00
 	ABS_Y          = 0x01
+	ABS_Z          = 0x02
+	ABS_RX         = 0x03
+	ABS_RY         = 0x04
+	ABS_RZ         = 0x05
 	BTN_A          = 0x130
 	BTN_B          = 0x131
 	BTN_X          = 0x133
@@ -91,6 +97,22 @@ var actionCodes = map[string]uint16{
 	"DPad Right": BTN_DPAD_RIGHT,
 }
 
+var Axes = []string{"Left X", "Left Y", "Right X", "Right Y", "LT", "RT"}
+
+var axisCodes = map[string]uint16{
+	"Left X":  ABS_X,
+	"Left Y":  ABS_Y,
+	"Right X": ABS_RX,
+	"Right Y": ABS_RY,
+	"LT":      ABS_Z,
+	"RT":      ABS_RZ,
+}
+
+func AxisCode(name string) (uint16, bool) {
+	code, ok := axisCodes[name]
+	return code, ok
+}
+
 func (c *Controller) Init() error {
 	uinputFile, err := os.OpenFile("/dev/uinput", os.O_WRONLY|unix.O_NONBLOCK, 0666)
 	if err != nil {
@@ -107,11 +129,11 @@ func (c *Controller) Init() error {
 		ioctl(c.uinputFile.Fd(), UI_SET_KEYBIT, uintptr(btn))
 	}
 
-	ioctl(c.uinputFile.Fd(), UI_SET_ABSBIT, ABS_X)
-	ioctl(c.uinputFile.Fd(), UI_SET_ABSBIT, ABS_Y)
-
-	setupAbs(c.uinputFile.Fd(), ABS_X, -32768, 32767)
-	setupAbs(c.uinputFile.Fd(), ABS_Y, -32768, 32767)
+	axes := []uint32{ABS_X, ABS_Y, ABS_Z, ABS_RX, ABS_RY, ABS_RZ}
+	for _, axis := range axes {
+		ioctl(c.uinputFile.Fd(), UI_SET_ABSBIT, uintptr(axis))
+		setupAbs(c.uinputFile.Fd(), axis, -32768, 32767)
+	}
 
 	var uidev uinput_user_dev
 	copy(uidev.Name[:], "Xbox Virtual Controller\x00")
@@ -163,7 +185,7 @@ func setupAbs(fd uintptr, code uint32, min, max int32) {
 	ioctl(fd, UI_ABS_SETUP, uintptr(unsafe.Pointer(&absSetup)))
 }
 
-func (c *Controller) emit(eventType, code, value int32) {
+func (c *Controller) writeEvent(eventType, code, value int32) {
 	ev := input_event{
 		Type:  uint16(eventType),
 		Code:  uint16(code),
@@ -174,13 +196,16 @@ func (c *Controller) emit(eventType, code, value int32) {
 	if _, err := c.uinputFile.Write(buf.Bytes()); err != nil {
 		log.Printf("Error emitting event: %v", err)
 	}
-	if eventType != EV_SYN {
-		c.sync()
-	}
 }
 
-func (c *Controller) sync() {
-	c.emit(EV_SYN, SYN_REPORT, 0)
+func (c *Controller) emitKey(code, value int32) {
+	if c.uinputFile == nil {
+		return
+	}
+	c.mu.Lock()
+	c.writeEvent(EV_KEY, code, value)
+	c.writeEvent(EV_SYN, SYN_REPORT, 0)
+	c.mu.Unlock()
 }
 
 func (c *Controller) Press(action string, holdTime time.Duration) {
@@ -188,9 +213,47 @@ func (c *Controller) Press(action string, holdTime time.Duration) {
 	if !ok || c.uinputFile == nil {
 		return
 	}
-	c.emit(EV_KEY, int32(code), 1)
+	c.emitKey(int32(code), 1)
 	time.Sleep(holdTime * time.Millisecond)
-	c.emit(EV_KEY, int32(code), 0)
+	c.emitKey(int32(code), 0)
+}
+
+func (c *Controller) SetButton(action string, down bool) {
+	code, ok := actionCodes[action]
+	if !ok {
+		return
+	}
+	value := int32(0)
+	if down {
+		value = 1
+	}
+	c.emitKey(int32(code), value)
+}
+
+func (c *Controller) SetAxis(code uint16, value int32) {
+	if c.uinputFile == nil {
+		return
+	}
+	if value < -32768 {
+		value = -32768
+	}
+	if value > 32767 {
+		value = 32767
+	}
+	c.mu.Lock()
+	c.writeEvent(EV_ABS, int32(code), value)
+	c.writeEvent(EV_SYN, SYN_REPORT, 0)
+	c.mu.Unlock()
+}
+
+func (c *Controller) Frame(f func(w func(eventType, code, value int32))) {
+	if c.uinputFile == nil {
+		return
+	}
+	c.mu.Lock()
+	f(c.writeEvent)
+	c.writeEvent(EV_SYN, SYN_REPORT, 0)
+	c.mu.Unlock()
 }
 
 func ioctl(fd uintptr, req uint, data uintptr) error {
