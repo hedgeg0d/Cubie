@@ -30,12 +30,12 @@ type faceSpec struct {
 }
 
 var faceSpecs = map[string]faceSpec{
-	"R": {0, 1, 1, ColorR},
-	"L": {0, -1, -1, ColorL},
-	"U": {1, 1, 1, ColorU},
-	"D": {1, -1, -1, ColorD},
-	"F": {2, 1, 1, ColorF},
-	"B": {2, -1, -1, ColorB},
+	"R": {0, 1, -1, ColorR},
+	"L": {0, -1, 1, ColorL},
+	"U": {1, 1, -1, ColorU},
+	"D": {1, -1, 1, ColorD},
+	"F": {2, 1, -1, ColorF},
+	"B": {2, -1, 1, ColorB},
 }
 
 var faceOrder = []string{"U", "D", "R", "L", "F", "B"}

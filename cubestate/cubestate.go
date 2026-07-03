@@ -16,6 +16,14 @@ var oppositeFace = map[string]string{
 var suffixes = []string{"", "'", "2"}
 
 func GenerateScramble(n int) []string {
+	return genScramble(n, suffixes)
+}
+
+func GenerateScrambleQuarter(n int) []string {
+	return genScramble(n, []string{"", "'"})
+}
+
+func genScramble(n int, allowedSuffixes []string) []string {
 	moves := make([]string, 0, n)
 	var prev, prevPrev string
 	for len(moves) < n {
@@ -26,7 +34,7 @@ func GenerateScramble(n int) []string {
 		if face == prevPrev && oppositeFace[face] == prev {
 			continue
 		}
-		suffix := suffixes[rand.Intn(len(suffixes))]
+		suffix := allowedSuffixes[rand.Intn(len(allowedSuffixes))]
 		moves = append(moves, face+suffix)
 		prevPrev = prev
 		prev = face
