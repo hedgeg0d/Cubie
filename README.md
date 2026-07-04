@@ -2,6 +2,15 @@
 
 Cubie is a desktop app for Bluetooth smart cubes. Connect your cube and use it as a live 3D viewer, a speedcubing timer, a blindfold trainer, or a game controller.
 
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/4785fa13-de47-427f-9802-2ed09bdb01ee" width="600" alt="Live 3D viewer">
+</p>
+
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/11531199-c1ff-46a4-af9f-69e18fd6d7ce" width="49%" alt="Speedcubing timer">
+  <img src="https://github.com/user-attachments/assets/9bcf33e6-b092-4ea7-860c-0084933862f3" width="49%" alt="Blindfold trainer">
+</p>
+
 ## Supported cubes
 
 - MoYu Weilong V10 AI
