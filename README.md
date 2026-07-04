@@ -10,12 +10,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/hedgeg0d/Cubie/actions/workflows/release.yml"><img alt="Build" src="https://github.com/hedgeg0d/Cubie/actions/workflows/release.yml/badge.svg"></a>
-  <a href="https://github.com/hedgeg0d/Cubie/releases/tag/rolling"><img alt="Download" src="https://img.shields.io/badge/download-Linux%20build-2EA043?logo=linux&logoColor=white"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux-333333?logo=linux&logoColor=white">
   <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
   <img alt="GUI" src="https://img.shields.io/badge/GUI-Fyne-1A2151?logo=fyne&logoColor=white">
-  <img alt="Cube" src="https://img.shields.io/badge/cube-Weilong%20V10%20AI-F5A623">
   <a href="https://github.com/hedgeg0d/Cubie/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/hedgeg0d/Cubie?style=flat&color=FFD447"></a>
 </p>
 
