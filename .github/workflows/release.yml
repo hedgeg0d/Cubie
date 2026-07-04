@@ -1,0 +1,46 @@
+name: Build & Rolling Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc libgl1-mesa-dev xorg-dev libxxf86vm-dev xvfb
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: xvfb-run -a go test ./...
+
+      - name: Build
+        run: CGO_ENABLED=1 go build -ldflags="-s -w" -o cubie-linux-amd64 ./main
+
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete rolling --cleanup-tag --yes || true
+          gh release create rolling \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Rolling release" \
+            --notes "Latest Linux build from master (${GITHUB_SHA:0:7})." \
+            cubie-linux-amd64

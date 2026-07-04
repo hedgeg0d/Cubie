@@ -10,6 +10,8 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/hedgeg0d/Cubie/actions/workflows/release.yml"><img alt="Build" src="https://github.com/hedgeg0d/Cubie/actions/workflows/release.yml/badge.svg"></a>
+  <a href="https://github.com/hedgeg0d/Cubie/releases/tag/rolling"><img alt="Download" src="https://img.shields.io/badge/download-Linux%20build-2EA043?logo=linux&logoColor=white"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Linux-333333?logo=linux&logoColor=white">
   <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
   <img alt="GUI" src="https://img.shields.io/badge/GUI-Fyne-1A2151?logo=fyne&logoColor=white">
@@ -49,6 +51,15 @@ More models are planned. If you own another smart cube and want it supported, se
 - Linux (controller mode needs `/dev/uinput`)
 - A Bluetooth adapter
 - Go 1.24 or newer
+
+## Download
+
+Grab the latest Linux build from the [rolling release](https://github.com/hedgeg0d/Cubie/releases/tag/rolling) — a single binary rebuilt on every push to `master`:
+
+```sh
+chmod +x cubie-linux-amd64
+./cubie-linux-amd64
+```
 
 ## Building and running
 
