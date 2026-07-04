@@ -36,11 +36,26 @@ func (a *App) showBlind() {
 		attempts := loadAttempts()
 		scramble := cubestate.GenerateScramble(scrambleLen)
 
+		lettering := loadLetteringProfiles()
+		scheme := lettering.Profiles[lettering.Active]
+
 		scrambleGrid, scrambleTexts := newScrambleStrip(scrambleLen)
 		memoLabel := widget.NewLabel("Memo: 0.00")
 		execLabel := widget.NewLabel("Exec: 0.00")
 		hintLabel := widget.NewLabel("")
 		statsLabel := widget.NewLabel("")
+
+		cornersMemo := widget.NewLabel("")
+		cornersMemo.Wrapping = fyne.TextWrapWord
+		edgesMemo := widget.NewLabel("")
+		edgesMemo.Wrapping = fyne.TextWrapWord
+		memoCard := card(container.NewVBox(
+			caption("Memo ("+lettering.Active+")"),
+			caption("Corners"),
+			cornersMemo,
+			caption("Edges"),
+			edgesMemo,
+		))
 
 		refreshStats := func() {
 			statsLabel.SetText(
@@ -111,7 +126,11 @@ func (a *App) showBlind() {
 			execLabel.SetText("Exec: 0.00")
 			memoLabel.Refresh()
 			execLabel.Refresh()
+			corners, edges := memoText(scheme, scramble)
+			cornersMemo.SetText(corners)
+			edgesMemo.SetText(edges)
 			scrambleGrid.Show()
+			memoCard.Show()
 			updateScramble()
 		}
 
@@ -141,6 +160,7 @@ func (a *App) showBlind() {
 			ctl.mu.Unlock()
 
 			scrambleGrid.Hide()
+			memoCard.Hide()
 			setHint("Memorize, then turn to start solving")
 
 			go func() {
@@ -254,8 +274,12 @@ func (a *App) showBlind() {
 		newScramble()
 		refreshStats()
 
-		controls := container.NewHBox(startMemo, giveUp, widget.NewButton("Back", a.showMenu))
-		top := container.NewVBox(card(scrambleGrid), memoLabel, execLabel, hintLabel, statsLabel, controls)
+		controls := container.NewHBox(
+			startMemo, giveUp,
+			widget.NewButton("Lettering", a.showLettering),
+			widget.NewButton("Back", a.showMenu),
+		)
+		top := container.NewVBox(card(scrambleGrid), memoCard, memoLabel, execLabel, hintLabel, statsLabel, controls)
 		return container.NewBorder(top, nil, nil, nil, list)
 	})
 }

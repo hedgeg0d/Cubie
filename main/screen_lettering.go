@@ -122,7 +122,7 @@ func (a *App) showLettering() {
 			objs := make([]fyne.CanvasObject, 9)
 			for idx := 0; idx < 9; idx++ {
 				if idx == 4 {
-					center := newStickerCell(face+"c", faceFill[face], faceTextColor(face), face, false, nil)
+					center := newStickerCell(face+"c", faceFill[face], faceTextColor(face), "", false, nil)
 					objs[idx] = center
 					continue
 				}
@@ -202,7 +202,7 @@ func (a *App) showLettering() {
 
 		bottom := container.NewVBox(
 			container.NewPadded(editRow),
-			container.NewPadded(container.NewHBox(save, widget.NewButton("Back", a.showMenu))),
+			container.NewPadded(container.NewHBox(save, widget.NewButton("Back", a.showBlind))),
 		)
 
 		return container.NewPadded(container.NewBorder(

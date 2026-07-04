@@ -92,11 +92,10 @@ func (a *App) showMenu() {
 
 		grid := container.NewGridWithColumns(2, left, right)
 
-		modeTiles := container.NewGridWithColumns(4,
+		modeTiles := container.NewGridWithColumns(3,
 			NewModeTile("Controller", "Cube as a gamepad", accentCyan, a.showController),
 			NewModeTile("Timer", "Speedcubing timer", accentGreen, a.showTimer),
 			NewModeTile("Blind", "Memo & exec timing", accentAmber, a.showBlind),
-			NewModeTile("Lettering", "Blind memo scheme", accentColor, a.showLettering),
 		)
 
 		disconnect := widget.NewButton("Disconnect", func() {

@@ -4,6 +4,9 @@ import (
 	"image/color"
 	"sort"
 	"strconv"
+	"strings"
+
+	"cubie/cubestate"
 )
 
 const letteringProfilesFile = "lettering_profiles.json"
@@ -75,6 +78,27 @@ func loadLetteringProfiles() LetteringProfiles {
 		}
 	}
 	return p
+}
+
+func (s LetteringScheme) symbol(f cubestate.Facelet) string {
+	v := s[f.Face+strconv.Itoa(f.Idx)]
+	if v == "" {
+		return "·"
+	}
+	return v
+}
+
+func memoText(scheme LetteringScheme, scramble []string) (string, string) {
+	r := cubestate.Memo(scramble)
+	corners := make([]string, len(r.Corners))
+	for i, f := range r.Corners {
+		corners[i] = scheme.symbol(f)
+	}
+	edges := make([]string, len(r.Edges))
+	for i, f := range r.Edges {
+		edges[i] = scheme.symbol(f)
+	}
+	return strings.Join(corners, " "), strings.Join(edges, " ")
 }
 
 func (p LetteringProfiles) names() []string {
