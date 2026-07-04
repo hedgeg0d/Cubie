@@ -95,6 +95,14 @@ func (a *App) showConnect() {
 			a.setMiniSolved()
 			c.GreetCube()
 			a.showMenu()
+			go func() {
+				for range 6 {
+					if c.Resync() {
+						break
+					}
+					time.Sleep(250 * time.Millisecond)
+				}
+			}()
 		})
 		connectButton.Importance = widget.HighImportance
 

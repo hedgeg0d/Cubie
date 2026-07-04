@@ -42,6 +42,7 @@ func (a *App) switchScreen(size fyne.Size, build func(ctx context.Context) fyne.
 	if a.cube != nil {
 		a.cube.OnMove = nil
 		a.cube.OnState = nil
+		a.cube.OnResync = nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
@@ -77,6 +78,12 @@ func (a *App) wrapCubeHandlers() {
 			onState(state, solved)
 		}
 	}
+	a.cube.OnResync = func(state [18]byte) {
+		a.cubeModel = cubestate.ModelFromState(state)
+		if a.miniCube != nil {
+			a.miniCube.SetModel(a.cubeModel)
+		}
+	}
 }
 
 func (a *App) applyMiniMove(move string) {
@@ -108,6 +115,7 @@ func (a *App) disconnect() error {
 	a.cube.OnMove = nil
 	a.cube.OnState = nil
 	a.cube.OnGyro = nil
+	a.cube.OnResync = nil
 	err := a.cube.Disconnect()
 	a.cube = nil
 	return err

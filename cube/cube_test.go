@@ -98,6 +98,35 @@ func TestIsSolved(t *testing.T) {
 	}
 }
 
+func TestBurstOverflowSetsFlag(t *testing.T) {
+	c := New(WeilongV10AI)
+	c.handleNotification(packMovesC([5]int{0, 0, 0, 0, 0}, 0))
+	c.handleNotification(packMovesC([5]int{0, 0, 0, 0, 0}, 10))
+	if !c.pendingSync {
+		t.Fatal("counter gap of 10 did not set the resync flag")
+	}
+}
+
+func TestBurstHighRateSetsFlag(t *testing.T) {
+	c := New(WeilongV10AI)
+	for i := range burstThreshold {
+		c.handleNotification(packMovesC([5]int{4, 0, 0, 0, 0}, byte(i)))
+	}
+	if !c.pendingSync {
+		t.Fatal("rapid burst did not set the resync flag")
+	}
+}
+
+func TestNormalMovesDoNotSetFlag(t *testing.T) {
+	c := New(WeilongV10AI)
+	for i := range 4 {
+		c.handleNotification(packMovesC([5]int{4, 0, 0, 0, 0}, byte(i)))
+	}
+	if c.pendingSync {
+		t.Fatal("calm moves set the resync flag (would cause needless syncs)")
+	}
+}
+
 func TestTrySendNonBlocking(t *testing.T) {
 	ch := make(chan int, 1)
 	trySend(ch, 1)

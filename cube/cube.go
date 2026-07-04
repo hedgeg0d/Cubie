@@ -27,6 +27,15 @@ const (
 
 var weilongSolvedState = [18]byte{0, 0, 0, 36, 146, 73, 73, 36, 146, 109, 182, 219, 146, 73, 36, 182, 219, 109}
 
+const (
+	moveHistorySize = 5
+	burstWindow     = 300 * time.Millisecond
+	burstThreshold  = 6
+	burstIdle       = 400 * time.Millisecond
+	resyncTick      = 40 * time.Millisecond
+	stateTimeout    = 600 * time.Millisecond
+)
+
 var moveTable = map[int]string{
 	0: "F", 1: "F'", 2: "B", 3: "B'",
 	4: "U", 5: "U'", 6: "D", 7: "D'",
@@ -38,21 +47,27 @@ type Quaternion struct {
 }
 
 type Cube struct {
-	Type    CubeType
-	Power   int
-	OnMove  func(move string)
-	OnState func(state [18]byte, solved bool)
-	OnGyro  func(q Quaternion)
+	Type     CubeType
+	Power    int
+	OnMove   func(move string)
+	OnState  func(state [18]byte, solved bool)
+	OnGyro   func(q Quaternion)
+	OnResync func(state [18]byte)
 
-	conn        *connection.Connection
-	state       [18]byte
-	stateChan   chan []byte
-	powerChan   chan byte
-	lastMoves   [5]string
-	lastCounter byte
-	movePrimed  bool
-	gyro        Quaternion
-	mu          sync.Mutex
+	conn         *connection.Connection
+	state        [18]byte
+	stateChan    chan []byte
+	powerChan    chan byte
+	resyncStop   chan struct{}
+	moveTimes    []time.Time
+	lastMoveTime time.Time
+	pendingSync  bool
+	lastMoves    [5]string
+	lastCounter  byte
+	movePrimed   bool
+	gyro         Quaternion
+	mu           sync.Mutex
+	stateMu      sync.Mutex
 }
 
 func New(t CubeType) *Cube {
@@ -116,13 +131,14 @@ func (c *Cube) handleMoves(decrypted []byte) {
 	}
 	c.lastCounter = counter
 	c.movePrimed = true
+	c.trackBurst(count)
 	c.mu.Unlock()
 
 	if count <= 0 {
 		return
 	}
-	if count > 5 {
-		count = 5
+	if count > moveHistorySize {
+		count = moveHistorySize
 	}
 
 	for i := count - 1; i >= 0; i-- {
@@ -132,6 +148,75 @@ func (c *Cube) handleMoves(decrypted []byte) {
 			c.OnMove(move)
 		}
 	}
+}
+
+func (c *Cube) trackBurst(count int) {
+	if count <= 0 {
+		return
+	}
+	now := time.Now()
+	c.lastMoveTime = now
+	overflow := count > moveHistorySize
+	n := min(count, burstThreshold)
+	for range n {
+		c.moveTimes = append(c.moveTimes, now)
+	}
+	cutoff := now.Add(-burstWindow)
+	trimmed := c.moveTimes[:0]
+	for _, t := range c.moveTimes {
+		if t.After(cutoff) {
+			trimmed = append(trimmed, t)
+		}
+	}
+	c.moveTimes = trimmed
+
+	if overflow || len(c.moveTimes) >= burstThreshold {
+		c.pendingSync = true
+	}
+}
+
+func (c *Cube) resyncWorker(stop chan struct{}) {
+	ticker := time.NewTicker(resyncTick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			c.mu.Lock()
+			settled := c.pendingSync && time.Since(c.lastMoveTime) >= burstIdle
+			if settled {
+				c.pendingSync = false
+			}
+			c.mu.Unlock()
+			if settled {
+				c.Resync()
+			}
+		}
+	}
+}
+
+func (c *Cube) Resync() bool {
+	c.mu.Lock()
+	before := c.lastMoveTime
+	c.mu.Unlock()
+
+	if !c.UpdateState() {
+		return false
+	}
+	if c.OnResync != nil {
+		c.mu.Lock()
+		state := c.state
+		c.mu.Unlock()
+		c.OnResync(state)
+	}
+
+	c.mu.Lock()
+	if c.lastMoveTime.After(before) {
+		c.pendingSync = true
+	}
+	c.mu.Unlock()
+	return true
 }
 
 func (c *Cube) handleGyro(d []byte) {
@@ -168,6 +253,8 @@ func (c *Cube) FindAndConnect(mac string) error {
 	}
 	c.mu.Lock()
 	c.movePrimed = false
+	c.moveTimes = nil
+	c.pendingSync = false
 	c.mu.Unlock()
 	conn, err := connection.Setup(mac, int(c.Type), c.handleNotification)
 	if err != nil {
@@ -175,10 +262,21 @@ func (c *Cube) FindAndConnect(mac string) error {
 		return err
 	}
 	c.conn = conn
+	stop := make(chan struct{})
+	c.mu.Lock()
+	c.resyncStop = stop
+	c.mu.Unlock()
+	go c.resyncWorker(stop)
 	return nil
 }
 
 func (c *Cube) Disconnect() error {
+	c.mu.Lock()
+	if c.resyncStop != nil {
+		close(c.resyncStop)
+		c.resyncStop = nil
+	}
+	c.mu.Unlock()
 	if c.conn == nil {
 		return nil
 	}
@@ -206,21 +304,35 @@ func (c *Cube) UpdatePowerInfo() {
 	}
 }
 
-func (c *Cube) UpdateState() {
-	if c.Type == WeilongV10AI {
-		drain(c.stateChan)
-		stateReq := make([]byte, 20)
-		stateReq[0] = 0xA3
-		c.conn.SendData(stateReq)
-		received := <-c.stateChan
-		c.mu.Lock()
-		c.state = [18]byte(received)
-		solved := c.state == weilongSolvedState
-		c.mu.Unlock()
-		if c.OnState != nil {
-			c.OnState(c.state, solved)
-		}
+func (c *Cube) UpdateState() bool {
+	if c.conn == nil {
+		return false
 	}
+	if c.Type != WeilongV10AI {
+		return false
+	}
+	c.stateMu.Lock()
+	drain(c.stateChan)
+	stateReq := make([]byte, 20)
+	stateReq[0] = 0xA3
+	c.conn.SendData(stateReq)
+	var received []byte
+	select {
+	case received = <-c.stateChan:
+	case <-time.After(stateTimeout):
+	}
+	c.stateMu.Unlock()
+	if received == nil {
+		return false
+	}
+	c.mu.Lock()
+	c.state = [18]byte(received)
+	solved := c.state == weilongSolvedState
+	c.mu.Unlock()
+	if c.OnState != nil {
+		c.OnState(c.state, solved)
+	}
+	return true
 }
 
 func (c *Cube) IsSolved() bool {
