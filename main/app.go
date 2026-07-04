@@ -105,6 +105,9 @@ func (a *App) disconnect() error {
 	if a.cube == nil {
 		return nil
 	}
+	a.cube.OnMove = nil
+	a.cube.OnState = nil
+	a.cube.OnGyro = nil
 	err := a.cube.Disconnect()
 	a.cube = nil
 	return err

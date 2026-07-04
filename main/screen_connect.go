@@ -80,6 +80,7 @@ func (a *App) showConnect() {
 			if modelRadio.Selected == "Weilong V10 AI" {
 				t = cube.WeilongV10AI
 			}
+			a.disconnect()
 			c := cube.New(t)
 			if err := c.FindAndConnect(macEntry.Text); err != nil {
 				errorText.Text = err.Error()
