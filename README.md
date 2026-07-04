@@ -1,6 +1,21 @@
-# Cubie
+<p align="center">
+  <img src="logo.png" width="180" alt="Cubie logo">
+</p>
 
-Cubie is a desktop app for Bluetooth smart cubes. Connect your cube and use it as a live 3D viewer, a speedcubing timer, a blindfold trainer, or a game controller.
+<h1 align="center">Cubie</h1>
+
+<p align="center">
+  <b>Desktop companion for Bluetooth smart cubes</b><br>
+  Live 3D viewer · speedcubing timer · blindfold trainer · gamepad
+</p>
+
+<p align="center">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Linux-333333?logo=linux&logoColor=white">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
+  <img alt="GUI" src="https://img.shields.io/badge/GUI-Fyne-1A2151?logo=fyne&logoColor=white">
+  <img alt="Cube" src="https://img.shields.io/badge/cube-Weilong%20V10%20AI-F5A623">
+  <a href="https://github.com/hedgeg0d/Cubie/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/hedgeg0d/Cubie?style=flat&color=FFD447"></a>
+</p>
 
 <p align="center">
   <img src="https://github.com/user-attachments/assets/4785fa13-de47-427f-9802-2ed09bdb01ee" width="600" alt="Live 3D viewer">
