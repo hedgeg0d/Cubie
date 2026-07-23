@@ -265,11 +265,11 @@ func (a *App) showTimer() {
 			saveCurrent()
 			selected = -1
 			list.UnselectAll()
-			display.SetColor(segDone)
-			display.SetText(formatMs(elapsed))
 			refreshStats()
 			list.Refresh()
 			resetScramble()
+			display.SetColor(segDone)
+			display.SetText(formatMs(elapsed))
 			if penalty == "DNF" {
 				setHint("DNF — scramble again")
 			} else {
