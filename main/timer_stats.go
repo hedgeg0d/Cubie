@@ -6,6 +6,7 @@ import (
 	"strconv"
 )
 
+
 func itoa(n int) string { return strconv.Itoa(n) }
 
 const timesFile = "times.json"
@@ -106,6 +107,54 @@ func mean(solves []Solve) int64 {
 		return -1
 	}
 	return sum / count
+}
+
+const sessionsFile = "sessions.json"
+
+type TimerSessions struct {
+	Active   string            `json:"active"`
+	Sessions map[string][]Solve `json:"sessions"`
+}
+
+func (s TimerSessions) names() []string {
+	out := make([]string, 0, len(s.Sessions))
+	for k := range s.Sessions {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func loadSessions() TimerSessions {
+	s := TimerSessions{Sessions: map[string][]Solve{}}
+	if err := readJSON(sessionsFile, &s); err != nil {
+		var solves []Solve
+		if readJSON(timesFile, &solves) == nil && len(solves) > 0 {
+			s.Sessions["Default"] = solves
+			s.Active = "Default"
+			saveSessions(s)
+		}
+		return s
+	}
+	if s.Sessions == nil {
+		s.Sessions = map[string][]Solve{}
+	}
+	if len(s.Sessions) == 0 {
+		s.Sessions["Default"] = nil
+		s.Active = "Default"
+		saveSessions(s)
+	}
+	if _, ok := s.Sessions[s.Active]; !ok {
+		for name := range s.Sessions {
+			s.Active = name
+			break
+		}
+	}
+	return s
+}
+
+func saveSessions(sessions TimerSessions) error {
+	return writeJSON(sessionsFile, sessions)
 }
 
 func averageOf(solves []Solve, n int) int64 {

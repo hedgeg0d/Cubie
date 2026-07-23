@@ -99,7 +99,12 @@ type timerCtl struct {
 
 func (a *App) showTimer() {
 	a.switchScreen(fyne.NewSize(780, 880), func(ctx context.Context) fyne.CanvasObject {
-		solves := loadSolves()
+		sessions := loadSessions()
+		active := sessions.Active
+		solves := sessions.Sessions[active]
+		if solves == nil {
+			solves = []Solve{}
+		}
 		scramble := cubestate.GenerateScramble(scrambleLen)
 
 		scrambleGrid, scrambleTexts := newScrambleStrip(scrambleLen)
@@ -116,6 +121,11 @@ func (a *App) showTimer() {
 		statsRow := container.NewGridWithColumns(4, bestCard, ao5Card, ao12Card, meanCard)
 
 		ctl := &timerCtl{}
+
+		saveCurrent := func() {
+			sessions.Sessions[active] = solves
+			saveSessions(sessions)
+		}
 
 		refreshStats := func() {
 			bestVal.Text = formatMs(best(solves))
@@ -249,7 +259,7 @@ func (a *App) showTimer() {
 				At:       time.Now().Unix(),
 				Events:   events,
 			})
-			saveSolves(solves)
+			saveCurrent()
 			selected = -1
 			list.UnselectAll()
 			display.SetColor(segDone)
@@ -383,7 +393,7 @@ func (a *App) showTimer() {
 			} else {
 				last.Penalty = p
 			}
-			saveSolves(solves)
+			saveCurrent()
 			refreshStats()
 			list.Refresh()
 		}
@@ -396,13 +406,56 @@ func (a *App) showTimer() {
 			solves = append(solves[:i], solves[i+1:]...)
 			selected = -1
 			list.UnselectAll()
-			saveSolves(solves)
+			saveCurrent()
 			refreshStats()
 			list.Refresh()
 		}
 
 		resetScramble()
 		refreshStats()
+
+		sessionSel := widget.NewSelect(sessions.names(), func(name string) {
+			if name == active {
+				return
+			}
+			sessions.Sessions[active] = solves
+			sessions.Active = name
+			saveSessions(sessions)
+			a.showTimer()
+		})
+		sessionSel.Selected = active
+
+		newSessBtn := widget.NewButton("New", func() {
+			nameEntry := widget.NewEntry()
+			nameEntry.SetPlaceHolder("Session name")
+			dialog.ShowForm("New session", "Create", "Cancel",
+				[]*widget.FormItem{widget.NewFormItem("Name", nameEntry)},
+				func(ok bool) {
+					name := nameEntry.Text
+					if !ok || name == "" {
+						return
+					}
+					sessions.Sessions[active] = solves
+					sessions.Sessions[name] = nil
+					sessions.Active = name
+					saveSessions(sessions)
+					a.showTimer()
+				}, a.window)
+		})
+
+		delSessBtn := widget.NewButton("Delete", func() {
+			if len(sessions.Sessions) <= 1 {
+				return
+			}
+			delete(sessions.Sessions, active)
+			for name := range sessions.Sessions {
+				sessions.Active = name
+				break
+			}
+			saveSessions(sessions)
+			a.showTimer()
+		})
+		delSessBtn.Importance = widget.DangerImportance
 
 		plus2 := widget.NewButton("+2", func() { penalty("+2") })
 		plus2.Importance = widget.WarningImportance
@@ -415,7 +468,8 @@ func (a *App) showTimer() {
 		controls := container.NewGridWithColumns(5, plus2, dnf, details, del, newScr)
 
 		header := container.NewBorder(nil, nil,
-			heading("Timer", 26), widget.NewButton("Back", a.showMenu),
+			heading("Timer", 26),
+			container.NewHBox(sessionSel, newSessBtn, delSessBtn, widget.NewButton("Back", a.showMenu)),
 		)
 
 		timerCard := card(container.NewVBox(
