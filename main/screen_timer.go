@@ -206,6 +206,8 @@ func (a *App) showTimer() {
 			hintLabel.Refresh()
 		}
 
+		var penalty func(string)
+
 		updateUI := func() {
 			ctl.mu.Lock()
 			phase, idx := ctl.phase, ctl.idx
@@ -248,7 +250,7 @@ func (a *App) showTimer() {
 			updateUI()
 		}
 
-		finalize := func(elapsed int64) {
+		finalize := func(elapsed int64, penalty string) {
 			ctl.mu.Lock()
 			events := ctl.events
 			ctl.events = nil
@@ -256,6 +258,7 @@ func (a *App) showTimer() {
 			solves = append(solves, Solve{
 				Ms:       elapsed,
 				Scramble: cubestate.ScrambleString(scramble),
+				Penalty:  penalty,
 				At:       time.Now().Unix(),
 				Events:   events,
 			})
@@ -267,9 +270,25 @@ func (a *App) showTimer() {
 			refreshStats()
 			list.Refresh()
 			resetScramble()
-			display.SetColor(segDone)
-			display.SetText(formatMs(elapsed))
-			setHint("Solved " + formatMs(elapsed) + " — scramble again")
+			if penalty == "DNF" {
+				setHint("DNF — scramble again")
+			} else {
+				setHint("Solved " + formatMs(elapsed) + " — scramble again")
+			}
+		}
+
+		dnfRunning := func() {
+			ctl.mu.Lock()
+			if ctl.phase != tsSolving {
+				ctl.mu.Unlock()
+				penalty("DNF")
+				return
+			}
+			ctl.phase = tsScramble
+			elapsed := time.Since(ctl.start).Milliseconds()
+			ctl.stopFn()
+			ctl.mu.Unlock()
+			finalize(elapsed, "DNF")
 		}
 
 		startSolve := func() {
@@ -339,7 +358,7 @@ func (a *App) showTimer() {
 						elapsed := time.Since(ctl.start).Milliseconds()
 						ctl.stopFn()
 						ctl.mu.Unlock()
-						finalize(elapsed)
+						finalize(elapsed, "")
 						return
 					}
 					time.Sleep(120 * time.Millisecond)
@@ -382,7 +401,7 @@ func (a *App) showTimer() {
 			return -1
 		}
 
-		penalty := func(p string) {
+		penalty = func(p string) {
 			i := targetIdx()
 			if i < 0 {
 				return
@@ -459,7 +478,7 @@ func (a *App) showTimer() {
 
 		plus2 := widget.NewButton("+2", func() { penalty("+2") })
 		plus2.Importance = widget.WarningImportance
-		dnf := widget.NewButton("DNF", func() { penalty("DNF") })
+		dnf := widget.NewButton("DNF", dnfRunning)
 		dnf.Importance = widget.DangerImportance
 		details := widget.NewButton("Details", showDetails)
 		del := widget.NewButton("Delete", deleteSelected)
